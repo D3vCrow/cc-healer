@@ -3,6 +3,8 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
+import { skillChecks } from './checks/index.js';
+import type { CheckContext } from './checks/index.js';
 import type { Issue, CheckReport } from './types.js';
 
 const VERSION = '0.0.1';
@@ -68,25 +70,16 @@ async function scanDir(target: string): Promise<CheckReport> {
     }
 
     const result = parseFrontmatter(content);
+    const ctx: CheckContext = { file: name, filePath: fullPath, parsed: result, content };
 
     if (!result.ok) {
       parseFailures++;
-      for (const err of result.errors) {
-        issues.push({ severity: 'error', check: 'yaml-parses', file: name, message: err });
-      }
-      continue;
+    } else if (Object.keys(result.data).length > 0) {
+      withFrontmatter++;
     }
 
-    if (Object.keys(result.data).length === 0) continue;
-    withFrontmatter++;
-
-    if (!('description' in result.data)) {
-      issues.push({
-        severity: 'error',
-        check: 'description-present',
-        file: name,
-        message: 'frontmatter missing required field: description',
-      });
+    for (const check of skillChecks) {
+      issues.push(...check(ctx));
     }
   }
 
