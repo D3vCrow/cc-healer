@@ -1,0 +1,50 @@
+{
+  "name": "cc-doctor",
+  "version": "0.0.1",
+  "description": "Claude Code workspace health-check CLI — lints skills, memory files, hooks, and settings",
+  "type": "module",
+  "bin": {
+    "cc-doctor": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc",
+    "smoke:commands": "tsx src/cli.ts \"$HOME/.claude/commands\"",
+    "smoke:commands:win": "tsx src/cli.ts \"%USERPROFILE%/.claude/commands\"",
+    "test": "node --test --import tsx/esm"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "DevCrow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/D3vCrow/cc-doctor.git"
+  },
+  "homepage": "https://github.com/D3vCrow/cc-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/D3vCrow/cc-doctor/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "linter",
+    "audit",
+    "skill",
+    "workspace",
+    "health-check",
+    "cli",
+    "frontmatter"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

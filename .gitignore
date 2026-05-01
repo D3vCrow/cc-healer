@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Test/coverage
+coverage/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Lockfiles — keep package-lock.json or bun.lockb if committed; bun-only by default
+bun.lockb
