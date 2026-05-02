@@ -18,16 +18,16 @@ function expandTilde(p: string): string {
 
 function printHelp(): void {
   // eslint-disable-next-line no-console
-  console.log(`cc-doctor ${VERSION}
+  console.log(`cc-healer ${VERSION}
 Claude Code workspace health-check.
 
 Usage:
-  cc-doctor <path>          scan a directory of .md files
-  cc-doctor --version       print version
-  cc-doctor --help          this message
+  cc-healer <path>          scan a directory of .md files
+  cc-healer --version       print version
+  cc-healer --help          this message
 
 V0 (smoke test): parses frontmatter from each .md file, reports counts.
-Phase 1 will add the full check catalog per docs/cc-doctor-v1-spec.md.`);
+Phase 1 will add the full check catalog per docs/cc-healer-v1-spec.md.`);
 }
 
 async function scanDir(target: string): Promise<CheckReport> {
@@ -93,7 +93,7 @@ function pad(s: string, n: number): string {
 function printReport(target: string, report: CheckReport): void {
   // eslint-disable-next-line no-console
   const log = console.log.bind(console);
-  log(`\ncc-doctor V0 smoke — scanned ${report.scanned} .md files in ${target} · ${report.durationMs}ms`);
+  log(`\ncc-healer V0 smoke — scanned ${report.scanned} .md files in ${target} · ${report.durationMs}ms`);
   log(`  with-frontmatter: ${report.withFrontmatter}`);
   log(`  parse-failures:   ${report.parseFailures}`);
 
@@ -130,7 +130,7 @@ async function main(): Promise<number> {
   }
   if (args.includes('--version') || args.includes('-v')) {
     // eslint-disable-next-line no-console
-    console.log(`cc-doctor ${VERSION}`);
+    console.log(`cc-healer ${VERSION}`);
     return 0;
   }
 
@@ -147,7 +147,7 @@ main()
   })
   .catch((err) => {
     // eslint-disable-next-line no-console
-    console.error(`cc-doctor: fatal — ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`cc-healer: fatal — ${err instanceof Error ? err.message : String(err)}`);
     process.exit(2);
   });
 

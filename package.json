@@ -1,10 +1,10 @@
 {
-  "name": "cc-doctor",
+  "name": "cc-healer",
   "version": "0.0.1",
   "description": "Claude Code workspace health-check CLI — lints skills, memory files, hooks, and settings",
   "type": "module",
   "bin": {
-    "cc-doctor": "./dist/cli.js"
+    "cc-healer": "./dist/cli.js"
   },
   "files": [
     "dist/",
@@ -25,11 +25,11 @@
   "author": "DevCrow",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/D3vCrow/cc-doctor.git"
+    "url": "git+https://github.com/D3vCrow/cc-healer.git"
   },
-  "homepage": "https://github.com/D3vCrow/cc-doctor#readme",
+  "homepage": "https://github.com/D3vCrow/cc-healer#readme",
   "bugs": {
-    "url": "https://github.com/D3vCrow/cc-doctor/issues"
+    "url": "https://github.com/D3vCrow/cc-healer/issues"
   },
   "keywords": [
     "claude",

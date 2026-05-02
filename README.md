@@ -1,4 +1,4 @@
-# cc-doctor
+# cc-healer
 
 > Claude Code workspace health-check CLI — lints skills, memory files, hooks, and settings.
 
@@ -6,7 +6,7 @@
 
 ## Why
 
-Claude Code workspaces drift. Hook scripts go missing, skill frontmatter rots, memory files lose their `verify_by:` dates, settings.json schema shifts between releases. cc-doctor catches these before they bite.
+Claude Code workspaces drift. Hook scripts go missing, skill frontmatter rots, memory files lose their `verify_by:` dates, settings.json schema shifts between releases. cc-healer catches these before they bite.
 
 Built on the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` and the `validate_skill.py` parser shape lifted from [skill-forge](https://github.com/AgriciDaniel/skill-forge) (vet 2026-04-26).
 
@@ -54,7 +54,7 @@ src/
     └── json.ts             # --json
 ```
 
-Full spec: `docs/cc-doctor-v1-spec.md` (workspace-internal).
+Full spec: `docs/cc-healer-v1-spec.md` (workspace-internal).
 
 ## Design principles
 
