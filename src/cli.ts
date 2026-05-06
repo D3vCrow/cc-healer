@@ -23,11 +23,32 @@ Claude Code workspace health-check.
 
 Usage:
   cc-healer <path>          scan a directory of .md files
+  cc-healer --tier skills   scan ~/.claude/commands (Tier 1)
   cc-healer --version       print version
   cc-healer --help          this message
 
-V0 (smoke test): parses frontmatter from each .md file, reports counts.
-Phase 1 will add the full check catalog per docs/cc-healer-v1-spec.md.`);
+Tiers (per docs/cc-healer-v1-spec.md):
+  skills    — Tier 1, ~/.claude/commands (implemented)
+  memory    — Tier 2, ~/.claude/projects/*/memory (not yet)
+  settings  — Tier 3, ~/.claude/settings.json (not yet)
+  plugins   — Tier 4, plugin install registry (not yet)
+
+V0/Phase 1: 5 of 9 skill checks live. See spec for the full check catalog.`);
+}
+
+function resolveTierTarget(tier: string): string | null {
+  // Returns a default path for the named tier, or null if the tier isn't implemented.
+  // Mirrors the tier table in docs/cc-healer-v1-spec.md.
+  switch (tier) {
+    case 'skills':
+      return expandTilde('~/.claude/commands');
+    case 'memory':
+    case 'settings':
+    case 'plugins':
+      return null; // recognized but not yet implemented
+    default:
+      return null;
+  }
 }
 
 async function scanDir(target: string): Promise<CheckReport> {
@@ -135,7 +156,29 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const target = expandTilde(args[0]!);
+  const tierIdx = args.indexOf('--tier');
+  let target: string;
+  if (tierIdx !== -1) {
+    const tierName = args[tierIdx + 1];
+    if (!tierName) {
+      console.error('cc-healer: --tier requires a name (skills | memory | settings | plugins)');
+      return 2;
+    }
+    const resolved = resolveTierTarget(tierName);
+    if (resolved === null) {
+      const known = ['skills', 'memory', 'settings', 'plugins'];
+      if (known.includes(tierName)) {
+        console.error(`cc-healer: tier "${tierName}" recognized but not yet implemented in this build`);
+      } else {
+        console.error(`cc-healer: unknown tier "${tierName}" (expected: ${known.join(' | ')})`);
+      }
+      return 2;
+    }
+    target = resolved;
+  } else {
+    target = expandTilde(args[0]!);
+  }
+
   const report = await scanDir(target);
   printReport(target, report);
 
