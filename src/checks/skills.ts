@@ -108,8 +108,18 @@ export const descriptionLength: Check = (ctx) => {
  * Severity: info.
  * Source: locked design §2 row "Legacy skill (no devcrow: block)".
  */
-export const legacyNoDevcrow: Check = (_ctx) => {
-  return [];
+export const legacyNoDevcrow: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return []; // not a skill at all
+  if ('devcrow' in ctx.parsed.data) return [];
+  return [
+    {
+      severity: 'info',
+      check: 'legacy-no-devcrow',
+      file: ctx.file,
+      message: 'no devcrow: block — migration backlog',
+    },
+  ];
 };
 
 /**
@@ -117,8 +127,25 @@ export const legacyNoDevcrow: Check = (_ctx) => {
  * Severity: info.
  * Source: locked design §2 row "verify_by past today (if present)".
  */
-export const verifyByPast: Check = (_ctx) => {
-  return [];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export const verifyByPast: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const dc = ctx.parsed.data.devcrow;
+  if (typeof dc !== 'object' || dc === null) return [];
+  const vb = (dc as Record<string, unknown>).verify_by;
+  if (typeof vb !== 'string') return [];
+  if (vb === 'stable') return [];
+  if (!ISO_DATE.test(vb)) return []; // format-validity is a separate concern
+  if (vb >= ctx.today) return [];    // ISO YYYY-MM-DD compares lexicographically
+  return [
+    {
+      severity: 'info',
+      check: 'verify-by-past',
+      file: ctx.file,
+      message: `devcrow.verify_by ${vb} is past today (${ctx.today})`,
+    },
+  ];
 };
 
 // --- Registry -----------------------------------------------------------

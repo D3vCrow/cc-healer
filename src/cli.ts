@@ -32,6 +32,7 @@ Phase 1 will add the full check catalog per docs/cc-healer-v1-spec.md.`);
 
 async function scanDir(target: string): Promise<CheckReport> {
   const start = Date.now();
+  const today = new Date().toISOString().slice(0, 10);
   const issues: Issue[] = [];
   let scanned = 0;
   let withFrontmatter = 0;
@@ -70,7 +71,7 @@ async function scanDir(target: string): Promise<CheckReport> {
     }
 
     const result = parseFrontmatter(content);
-    const ctx: CheckContext = { file: name, filePath: fullPath, parsed: result, content };
+    const ctx: CheckContext = { file: name, filePath: fullPath, parsed: result, content, today };
 
     if (!result.ok) {
       parseFailures++;

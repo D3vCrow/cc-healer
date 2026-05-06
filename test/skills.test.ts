@@ -22,7 +22,11 @@ import type { CheckContext } from '../src/checks/types.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures', 'skills');
 
-async function loadFixture(name: string): Promise<CheckContext> {
+// Pinned to a fixed date so tests stay deterministic regardless of when they run.
+// Fixtures use 2025-01-01 for "stale" and 2027-01-01 for "future" relative to this.
+const TEST_TODAY = '2026-05-06';
+
+async function loadFixture(name: string, opts?: { today?: string }): Promise<CheckContext> {
   const filePath = join(FIXTURES, name);
   const content = await readFile(filePath, 'utf-8');
   return {
@@ -30,6 +34,7 @@ async function loadFixture(name: string): Promise<CheckContext> {
     filePath,
     parsed: parseFrontmatter(content),
     content,
+    today: opts?.today ?? TEST_TODAY,
   };
 }
 
@@ -118,6 +123,76 @@ test('descriptionLength: broken-yaml (parse failed) → 0 issues (self-guarded)'
   assert.deepEqual(descriptionLength(ctx), []);
 });
 
+// --- legacy-no-devcrow (impl) ------------------------------------------
+
+test('legacyNoDevcrow: clean fixture (has devcrow block) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(legacyNoDevcrow(ctx), []);
+});
+
+test('legacyNoDevcrow: legacy fixture (no devcrow block) → 1 info issue', async () => {
+  const ctx = await loadFixture('legacy.md');
+  const issues = legacyNoDevcrow(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'info');
+  assert.equal(issues[0]?.check, 'legacy-no-devcrow');
+});
+
+test('legacyNoDevcrow: devcrow-block-valid fixture → 0 issues', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md');
+  assert.deepEqual(legacyNoDevcrow(ctx), []);
+});
+
+test('legacyNoDevcrow: missing-description fixture (no devcrow either) → 1 info issue', async () => {
+  // missing-description has frontmatter (just no description), so it's still a skill — and a legacy one.
+  const ctx = await loadFixture('missing-description.md');
+  const issues = legacyNoDevcrow(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'info');
+});
+
+test('legacyNoDevcrow: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(legacyNoDevcrow(ctx), []);
+});
+
+// --- verify-by-past (impl) ---------------------------------------------
+
+test('verifyByPast: clean fixture (verify_by 2027-01-01, future) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(verifyByPast(ctx), []);
+});
+
+test('verifyByPast: stale-verify-by fixture (verify_by 2025-01-01, past) → 1 info issue', async () => {
+  const ctx = await loadFixture('stale-verify-by.md');
+  const issues = verifyByPast(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'info');
+  assert.equal(issues[0]?.check, 'verify-by-past');
+  assert.match(issues[0]?.message ?? '', /2025-01-01/);
+});
+
+test('verifyByPast: devcrow-block-valid (verify_by 2027-01-01, future) → 0 issues', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md');
+  assert.deepEqual(verifyByPast(ctx), []);
+});
+
+test('verifyByPast: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('legacy.md');
+  assert.deepEqual(verifyByPast(ctx), []);
+});
+
+test('verifyByPast: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(verifyByPast(ctx), []);
+});
+
+test('verifyByPast: stale fixture treated as future when today is pinned earlier', async () => {
+  // Pin today to 2024-01-01: 2025-01-01 is then future, no flag.
+  const ctx = await loadFixture('stale-verify-by.md', { today: '2024-01-01' });
+  assert.deepEqual(verifyByPast(ctx), []);
+});
+
 // --- Phase 1 stubs: registry sanity ------------------------------------
 // Remaining stubs must return [] regardless of input until Phase 1 implements them.
 
@@ -126,8 +201,6 @@ const stubs = [
   ['declaredBinaryResolvable', declaredBinaryResolvable],
   ['declaredEnvSet', declaredEnvSet],
   ['fileRefsResolve', fileRefsResolve],
-  ['legacyNoDevcrow', legacyNoDevcrow],
-  ['verifyByPast', verifyByPast],
 ] as const;
 
 for (const [name, check] of stubs) {

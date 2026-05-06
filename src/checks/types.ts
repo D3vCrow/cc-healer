@@ -9,6 +9,7 @@ export interface CheckContext {
   filePath: string;   // absolute path, used for file-ref resolution
   parsed: ParsedFile; // result of parseFrontmatter
   content: string;    // raw file content, for body scans
+  today: string;      // YYYY-MM-DD, set once per scan; lets tests pin time deterministically
 }
 
 export type Check = (ctx: CheckContext) => Issue[];
