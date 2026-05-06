@@ -91,15 +91,41 @@ test('descriptionPresent: broken-yaml (parse failed) → 0 issues (self-guarded)
   assert.deepEqual(descriptionPresent(ctx), []);
 });
 
+// --- description-length (impl) -----------------------------------------
+
+test('descriptionLength: clean fixture (≤200 chars) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(descriptionLength(ctx), []);
+});
+
+test('descriptionLength: oversized fixture (>200 chars) → 1 warn issue', async () => {
+  const ctx = await loadFixture('oversized-description.md');
+  const issues = descriptionLength(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'description-length');
+  assert.match(issues[0]?.message ?? '', /chars/);
+});
+
+test('descriptionLength: missing-description (no field) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('missing-description.md');
+  // When description is absent, descriptionLength returns [] — description-present owns that error.
+  assert.deepEqual(descriptionLength(ctx), []);
+});
+
+test('descriptionLength: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(descriptionLength(ctx), []);
+});
+
 // --- Phase 1 stubs: registry sanity ------------------------------------
-// All 7 stubs must return [] regardless of input until Phase 1 implements them.
+// Remaining stubs must return [] regardless of input until Phase 1 implements them.
 
 const stubs = [
   ['devcrowTierSet', devcrowTierSet],
   ['declaredBinaryResolvable', declaredBinaryResolvable],
   ['declaredEnvSet', declaredEnvSet],
   ['fileRefsResolve', fileRefsResolve],
-  ['descriptionLength', descriptionLength],
   ['legacyNoDevcrow', legacyNoDevcrow],
   ['verifyByPast', verifyByPast],
 ] as const;

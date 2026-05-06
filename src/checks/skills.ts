@@ -88,8 +88,19 @@ export const fileRefsResolve: Check = (_ctx) => {
  * Severity: warn.
  * Source: locked design §2 row "Description within threshold".
  */
-export const descriptionLength: Check = (_ctx) => {
-  return [];
+export const descriptionLength: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const desc = ctx.parsed.data.description;
+  if (typeof desc !== 'string') return [];
+  if (desc.length <= 200) return [];
+  return [
+    {
+      severity: 'warn',
+      check: 'description-length',
+      file: ctx.file,
+      message: `description is ${desc.length} chars (max 200)`,
+    },
+  ];
 };
 
 /**
