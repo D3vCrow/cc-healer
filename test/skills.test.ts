@@ -30,9 +30,20 @@ const TEST_TODAY = '2026-05-06';
 // Avoids the real process.env leaking into deterministic checks.
 const TEST_ENV: Record<string, string | undefined> = {};
 
+// CWD for fileRefsResolve tests. npm test runs from the cc-healer root so
+// process.cwd() points at the package root — that's exactly the resolution
+// surface we want body refs in fixtures to test against.
+const TEST_CWD = process.cwd();
+const TEST_DEVCROW_ROOT = 'F:/DevCrow/Dev';
+
 async function loadFixture(
   name: string,
-  opts?: { today?: string; env?: Record<string, string | undefined> },
+  opts?: {
+    today?: string;
+    env?: Record<string, string | undefined>;
+    cwd?: string;
+    devcrowRoot?: string;
+  },
 ): Promise<CheckContext> {
   const filePath = join(FIXTURES, name);
   const content = await readFile(filePath, 'utf-8');
@@ -43,6 +54,8 @@ async function loadFixture(
     content,
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
+    cwd: opts?.cwd ?? TEST_CWD,
+    devcrowRoot: opts?.devcrowRoot ?? TEST_DEVCROW_ROOT,
   };
 }
 
@@ -304,13 +317,70 @@ test('declaredEnvSet: broken-yaml (parse failed) → 0 issues (self-guarded)', a
   assert.deepEqual(declaredEnvSet(ctx), []);
 });
 
-// --- Phase 1 stubs: registry sanity ------------------------------------
-// Remaining stubs must return [] regardless of input until Phase 1 implements them.
+// --- declared-binary-resolvable (impl, async) --------------------------
 
-const stubs = [
-  ['declaredBinaryResolvable', declaredBinaryResolvable],
-  ['fileRefsResolve', fileRefsResolve],
-] as const;
+test('declaredBinaryResolvable: clean fixture (no requires.binaries) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(await declaredBinaryResolvable(ctx), []);
+});
+
+test('declaredBinaryResolvable: devcrow-block-valid (requires.binaries: [git, node]) → 0 issues (both must be on PATH for cc-healer to even run)', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md');
+  assert.deepEqual(await declaredBinaryResolvable(ctx), []);
+});
+
+test('declaredBinaryResolvable: devcrow-bin-required (2 bogus bins) → 2 warns', async () => {
+  const ctx = await loadFixture('devcrow-bin-required.md');
+  const issues = await declaredBinaryResolvable(ctx);
+  assert.equal(issues.length, 2);
+  assert.equal(issues.every((i) => i.severity === 'warn'), true);
+  assert.equal(issues.every((i) => i.check === 'declared-binary-resolvable'), true);
+});
+
+test('declaredBinaryResolvable: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('legacy.md');
+  assert.deepEqual(await declaredBinaryResolvable(ctx), []);
+});
+
+test('declaredBinaryResolvable: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(await declaredBinaryResolvable(ctx), []);
+});
+
+// --- file-refs-resolve (impl, async) -----------------------------------
+
+test('fileRefsResolve: legacy fixture (no Spec / Shared patterns lines) → 0 issues', async () => {
+  const ctx = await loadFixture('legacy.md');
+  assert.deepEqual(await fileRefsResolve(ctx), []);
+});
+
+test('fileRefsResolve: body-with-refs → 1 warn (bogus path; valid + duplicate refs ignored)', async () => {
+  const ctx = await loadFixture('body-with-refs.md');
+  const issues = await fileRefsResolve(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'file-refs-resolve');
+  assert.match(issues[0]?.message ?? '', /bogus-path-XYZ/);
+});
+
+test('fileRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded, no body to scan)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(await fileRefsResolve(ctx), []);
+});
+
+test('fileRefsResolve: refs deduplicate (backtick-wrapped duplicate of valid path counts once)', async () => {
+  // body-with-refs.md has the same valid target referenced twice (plain + backtick-wrapped).
+  // Second occurrence should not surface a duplicate warn for the bogus one either.
+  const ctx = await loadFixture('body-with-refs.md');
+  const issues = await fileRefsResolve(ctx);
+  // Exactly one issue (for the bogus path); backtick-wrapped valid path doesn't double-count.
+  assert.equal(issues.length, 1);
+});
+
+// --- Phase 1 stubs: registry sanity ------------------------------------
+// (No remaining stubs — all 9 checks are implemented.)
+
+const stubs: ReadonlyArray<readonly [string, (ctx: CheckContext) => unknown]> = [];
 
 for (const [name, check] of stubs) {
   test(`stub: ${name} returns [] on every fixture`, async () => {

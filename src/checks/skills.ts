@@ -11,8 +11,14 @@
 // to return [] when its precondition isn't met (e.g. parsed.ok is false for checks
 // that need a parsed frontmatter).
 
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import { access } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
+
+const execAsync = promisify(exec);
 
 // --- Implemented (Phase 0) ----------------------------------------------
 
@@ -81,10 +87,39 @@ export const devcrowTierSet: Check = (ctx) => {
  * Each entry in `devcrow.requires.binaries` must resolve via `where`/`which`.
  * Severity: warn.
  * Source: locked design §2 row "Declared binary resolvable".
- * Note: Phase 1 will need an async variant — subprocess call.
  */
-export const declaredBinaryResolvable: Check = (_ctx) => {
-  return [];
+async function isBinaryOnPath(name: string): Promise<boolean> {
+  const cmd = process.platform === 'win32' ? 'where' : 'which';
+  try {
+    await execAsync(`${cmd} ${name}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const declaredBinaryResolvable: Check = async (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const dc = ctx.parsed.data.devcrow;
+  if (typeof dc !== 'object' || dc === null) return [];
+  const requires = (dc as Record<string, unknown>).requires;
+  if (typeof requires !== 'object' || requires === null) return [];
+  const binList = (requires as Record<string, unknown>).binaries;
+  if (!Array.isArray(binList)) return [];
+  const issues: Issue[] = [];
+  for (const name of binList) {
+    if (typeof name !== 'string') continue;
+    const found = await isBinaryOnPath(name);
+    if (!found) {
+      issues.push({
+        severity: 'warn',
+        check: 'declared-binary-resolvable',
+        file: ctx.file,
+        message: `devcrow.requires.binaries: '${name}' not on PATH`,
+      });
+    }
+  }
+  return issues;
 };
 
 /**
@@ -121,10 +156,56 @@ export const declaredEnvSet: Check = (ctx) => {
  * or under `F:/DevCrow/Dev/`.
  * Severity: warn.
  * Source: locked design §2 row "File refs in body resolve".
- * Note: Phase 1 will need an async variant — `fs.access`.
+ *
+ * Real-world body shapes observed in ~/.claude/commands/:
+ *   Spec: docs/superpowers/specs/foo.md §4.3
+ *   Spec: `F:/DevCrow/Dev/docs/claude-output-conventions.md` (Rook quality line)
+ *   Shared patterns: docs/superpowers/reference/foo.md §3.1–§3.7
+ * Path token = first whitespace-delimited fragment after the colon, with a
+ * leading/trailing backtick stripped. Section refs (§…, paren tails) are dropped.
  */
-export const fileRefsResolve: Check = (_ctx) => {
-  return [];
+const REF_LINE = /^(?:Spec|Shared patterns):\s+(\S+)/gm;
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const fileRefsResolve: Check = async (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const issues: Issue[] = [];
+  const seen = new Set<string>();
+  for (const match of ctx.parsed.body.matchAll(REF_LINE)) {
+    const raw = match[1];
+    if (!raw) continue;
+    // Strip wrapping backticks.
+    const path = raw.replace(/^`+|`+$/g, '');
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const candidates = isAbsolute(path)
+      ? [path]
+      : [join(ctx.cwd, path), join(ctx.devcrowRoot, path)];
+    let resolved = false;
+    for (const candidate of candidates) {
+      if (await fileExists(candidate)) {
+        resolved = true;
+        break;
+      }
+    }
+    if (!resolved) {
+      issues.push({
+        severity: 'warn',
+        check: 'file-refs-resolve',
+        file: ctx.file,
+        message: `body ref '${path}' does not exist at cwd or ${ctx.devcrowRoot}`,
+      });
+    }
+  }
+  return issues;
 };
 
 /**

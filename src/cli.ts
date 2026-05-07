@@ -54,6 +54,8 @@ function resolveTierTarget(tier: string): string | null {
 async function scanDir(target: string): Promise<CheckReport> {
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
+  const cwd = process.cwd();
+  const devcrowRoot = 'F:/DevCrow/Dev';
   const issues: Issue[] = [];
   let scanned = 0;
   let withFrontmatter = 0;
@@ -99,6 +101,8 @@ async function scanDir(target: string): Promise<CheckReport> {
       content,
       today,
       env: process.env,
+      cwd,
+      devcrowRoot,
     };
 
     if (!result.ok) {
@@ -108,7 +112,7 @@ async function scanDir(target: string): Promise<CheckReport> {
     }
 
     for (const check of skillChecks) {
-      issues.push(...check(ctx));
+      issues.push(...(await check(ctx)));
     }
   }
 
