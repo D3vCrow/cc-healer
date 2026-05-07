@@ -49,7 +49,31 @@ export const descriptionPresent: Check = (ctx) => {
  * Severity: error.
  * Source: locked design §2 row "Required namespace fields present".
  */
-export const devcrowTierSet: Check = (_ctx) => {
+export const devcrowTierSet: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const dc = ctx.parsed.data.devcrow;
+  if (typeof dc !== 'object' || dc === null) return [];
+  const tier = (dc as Record<string, unknown>).tier;
+  if (tier === undefined) {
+    return [
+      {
+        severity: 'error',
+        check: 'devcrow-tier-set',
+        file: ctx.file,
+        message: 'devcrow.tier missing (values: light | heavy)',
+      },
+    ];
+  }
+  if (tier !== 'light' && tier !== 'heavy') {
+    return [
+      {
+        severity: 'error',
+        check: 'devcrow-tier-set',
+        file: ctx.file,
+        message: `devcrow.tier value ${JSON.stringify(tier)} (expected: light | heavy)`,
+      },
+    ];
+  }
   return [];
 };
 

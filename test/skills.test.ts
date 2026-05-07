@@ -123,6 +123,46 @@ test('descriptionLength: broken-yaml (parse failed) → 0 issues (self-guarded)'
   assert.deepEqual(descriptionLength(ctx), []);
 });
 
+// --- devcrow-tier-set (impl) -------------------------------------------
+
+test('devcrowTierSet: clean fixture (tier: light) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(devcrowTierSet(ctx), []);
+});
+
+test('devcrowTierSet: devcrow-block-valid (tier: heavy) → 0 issues', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md');
+  assert.deepEqual(devcrowTierSet(ctx), []);
+});
+
+test('devcrowTierSet: devcrow-tier-missing (no tier field) → 1 error issue', async () => {
+  const ctx = await loadFixture('devcrow-tier-missing.md');
+  const issues = devcrowTierSet(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'error');
+  assert.equal(issues[0]?.check, 'devcrow-tier-set');
+  assert.match(issues[0]?.message ?? '', /missing/);
+});
+
+test('devcrowTierSet: devcrow-tier-invalid (tier: medium) → 1 error issue', async () => {
+  const ctx = await loadFixture('devcrow-tier-invalid.md');
+  const issues = devcrowTierSet(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'error');
+  assert.equal(issues[0]?.check, 'devcrow-tier-set');
+  assert.match(issues[0]?.message ?? '', /medium/);
+});
+
+test('devcrowTierSet: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('legacy.md');
+  assert.deepEqual(devcrowTierSet(ctx), []);
+});
+
+test('devcrowTierSet: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(devcrowTierSet(ctx), []);
+});
+
 // --- legacy-no-devcrow (impl) ------------------------------------------
 
 test('legacyNoDevcrow: clean fixture (has devcrow block) → 0 issues', async () => {
@@ -197,7 +237,6 @@ test('verifyByPast: stale fixture treated as future when today is pinned earlier
 // Remaining stubs must return [] regardless of input until Phase 1 implements them.
 
 const stubs = [
-  ['devcrowTierSet', devcrowTierSet],
   ['declaredBinaryResolvable', declaredBinaryResolvable],
   ['declaredEnvSet', declaredEnvSet],
   ['fileRefsResolve', fileRefsResolve],
