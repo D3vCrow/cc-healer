@@ -88,12 +88,32 @@ export const declaredBinaryResolvable: Check = (_ctx) => {
 };
 
 /**
- * Each entry in `devcrow.requires.env` must be set in `process.env`.
+ * Each entry in `devcrow.requires.env` must be set (non-empty) in ctx.env.
  * Severity: warn.
  * Source: locked design §2 row "Declared env var set".
  */
-export const declaredEnvSet: Check = (_ctx) => {
-  return [];
+export const declaredEnvSet: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const dc = ctx.parsed.data.devcrow;
+  if (typeof dc !== 'object' || dc === null) return [];
+  const requires = (dc as Record<string, unknown>).requires;
+  if (typeof requires !== 'object' || requires === null) return [];
+  const envList = (requires as Record<string, unknown>).env;
+  if (!Array.isArray(envList)) return [];
+  const issues: Issue[] = [];
+  for (const name of envList) {
+    if (typeof name !== 'string') continue;
+    const val = ctx.env[name];
+    if (val === undefined || val === '') {
+      issues.push({
+        severity: 'warn',
+        check: 'declared-env-set',
+        file: ctx.file,
+        message: `devcrow.requires.env: '${name}' not set`,
+      });
+    }
+  }
+  return issues;
 };
 
 /**

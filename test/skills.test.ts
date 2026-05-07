@@ -26,7 +26,14 @@ const FIXTURES = join(HERE, 'fixtures', 'skills');
 // Fixtures use 2025-01-01 for "stale" and 2027-01-01 for "future" relative to this.
 const TEST_TODAY = '2026-05-06';
 
-async function loadFixture(name: string, opts?: { today?: string }): Promise<CheckContext> {
+// Empty env by default — tests that need specific vars set must override via opts.env.
+// Avoids the real process.env leaking into deterministic checks.
+const TEST_ENV: Record<string, string | undefined> = {};
+
+async function loadFixture(
+  name: string,
+  opts?: { today?: string; env?: Record<string, string | undefined> },
+): Promise<CheckContext> {
   const filePath = join(FIXTURES, name);
   const content = await readFile(filePath, 'utf-8');
   return {
@@ -35,6 +42,7 @@ async function loadFixture(name: string, opts?: { today?: string }): Promise<Che
     parsed: parseFrontmatter(content),
     content,
     today: opts?.today ?? TEST_TODAY,
+    env: opts?.env ?? TEST_ENV,
   };
 }
 
@@ -233,12 +241,74 @@ test('verifyByPast: stale fixture treated as future when today is pinned earlier
   assert.deepEqual(verifyByPast(ctx), []);
 });
 
+// --- declared-env-set (impl) -------------------------------------------
+
+test('declaredEnvSet: clean fixture (no requires.env) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(declaredEnvSet(ctx), []);
+});
+
+test('declaredEnvSet: devcrow-block-valid (requires.env: [HOME]) with HOME set → 0 issues', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md', { env: { HOME: '/home/user' } });
+  assert.deepEqual(declaredEnvSet(ctx), []);
+});
+
+test('declaredEnvSet: devcrow-block-valid (requires.env: [HOME]) with empty env → 1 warn', async () => {
+  const ctx = await loadFixture('devcrow-block-valid.md');
+  const issues = declaredEnvSet(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'declared-env-set');
+  assert.match(issues[0]?.message ?? '', /HOME/);
+});
+
+test('declaredEnvSet: devcrow-env-required (2 vars) all set → 0 issues', async () => {
+  const ctx = await loadFixture('devcrow-env-required.md', {
+    env: { BOGUS_TEST_ENV_VAR_A: 'x', BOGUS_TEST_ENV_VAR_B: 'y' },
+  });
+  assert.deepEqual(declaredEnvSet(ctx), []);
+});
+
+test('declaredEnvSet: devcrow-env-required (2 vars) all unset → 2 warns', async () => {
+  const ctx = await loadFixture('devcrow-env-required.md');
+  const issues = declaredEnvSet(ctx);
+  assert.equal(issues.length, 2);
+  assert.equal(issues.every((i) => i.severity === 'warn'), true);
+});
+
+test('declaredEnvSet: devcrow-env-required (1 of 2 set) → 1 warn for the missing one', async () => {
+  const ctx = await loadFixture('devcrow-env-required.md', {
+    env: { BOGUS_TEST_ENV_VAR_A: 'x' },
+  });
+  const issues = declaredEnvSet(ctx);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.message ?? '', /BOGUS_TEST_ENV_VAR_B/);
+});
+
+test('declaredEnvSet: devcrow-env-required with empty-string env value → 1 warn (treated as unset)', async () => {
+  const ctx = await loadFixture('devcrow-env-required.md', {
+    env: { BOGUS_TEST_ENV_VAR_A: '', BOGUS_TEST_ENV_VAR_B: 'y' },
+  });
+  const issues = declaredEnvSet(ctx);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.message ?? '', /BOGUS_TEST_ENV_VAR_A/);
+});
+
+test('declaredEnvSet: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('legacy.md');
+  assert.deepEqual(declaredEnvSet(ctx), []);
+});
+
+test('declaredEnvSet: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(declaredEnvSet(ctx), []);
+});
+
 // --- Phase 1 stubs: registry sanity ------------------------------------
 // Remaining stubs must return [] regardless of input until Phase 1 implements them.
 
 const stubs = [
   ['declaredBinaryResolvable', declaredBinaryResolvable],
-  ['declaredEnvSet', declaredEnvSet],
   ['fileRefsResolve', fileRefsResolve],
 ] as const;
 

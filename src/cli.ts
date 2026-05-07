@@ -92,7 +92,14 @@ async function scanDir(target: string): Promise<CheckReport> {
     }
 
     const result = parseFrontmatter(content);
-    const ctx: CheckContext = { file: name, filePath: fullPath, parsed: result, content, today };
+    const ctx: CheckContext = {
+      file: name,
+      filePath: fullPath,
+      parsed: result,
+      content,
+      today,
+      env: process.env,
+    };
 
     if (!result.ok) {
       parseFailures++;
