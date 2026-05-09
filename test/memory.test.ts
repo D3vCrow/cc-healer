@@ -235,21 +235,110 @@ test('memoryRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded)'
   assert.deepEqual(await memoryRefsResolve(ctx), []);
 });
 
-// --- Phase 1 stubs: cross-file checks (deferred to step 2b) -------------
+// --- memory-index-parity (impl, cross-file) ----------------------------
 
-const stubs: ReadonlyArray<readonly [string, (ctx: CheckContext) => unknown]> = [
-  ['memoryIndexParity', memoryIndexParity],
-  ['memoryFeedbackInHotTier', memoryFeedbackInHotTier],
-];
+import type { MemoryIndexes } from '../src/checks/types.ts';
 
-for (const [name, check] of stubs) {
-  test(`stub: ${name} returns [] on every fixture`, async () => {
-    for (const fixture of ['clean.md', 'broken-yaml.md', 'missing-required.md', 'invalid-type.md']) {
-      const ctx = await loadFixture(fixture);
-      assert.deepEqual(check(ctx), [], `${name} on ${fixture}`);
-    }
-  });
+async function loadWithIndexes(name: string, indexes: MemoryIndexes): Promise<CheckContext> {
+  const ctx = await loadFixture(name);
+  return { ...ctx, indexes };
 }
+
+test('memoryIndexParity: file in MEMORY.md only → 0 issues', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['clean.md']),
+    deep: new Set(['other.md']),
+  });
+  assert.deepEqual(memoryIndexParity(ctx), []);
+});
+
+test('memoryIndexParity: file in DEEP-INDEX.md only → 0 issues', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['other.md']),
+    deep: new Set(['clean.md']),
+  });
+  assert.deepEqual(memoryIndexParity(ctx), []);
+});
+
+test('memoryIndexParity: file in BOTH indexes → 1 error (double-listed)', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['clean.md']),
+    deep: new Set(['clean.md']),
+  });
+  const issues = memoryIndexParity(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'error');
+  assert.equal(issues[0]?.check, 'memory-index-parity');
+  assert.match(issues[0]?.message ?? '', /BOTH/);
+});
+
+test('memoryIndexParity: file in NEITHER → 1 error (orphan)', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['other.md']),
+    deep: new Set(['another.md']),
+  });
+  const issues = memoryIndexParity(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'error');
+  assert.equal(issues[0]?.check, 'memory-index-parity');
+  assert.match(issues[0]?.message ?? '', /orphan/);
+});
+
+test('memoryIndexParity: no indexes provided → 0 issues (skill-tier scan)', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memoryIndexParity(ctx), []);
+});
+
+test('memoryIndexParity: both indexes empty → 0 issues (no MEMORY/DEEP-INDEX in dir)', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(),
+    deep: new Set(),
+  });
+  assert.deepEqual(memoryIndexParity(ctx), []);
+});
+
+// --- memory-feedback-in-hot-tier (impl, cross-file) --------------------
+
+test('memoryFeedbackInHotTier: feedback fixture in hot tier → 0 issues', async () => {
+  const ctx = await loadWithIndexes('feedback-clean.md', {
+    hot: new Set(['feedback-clean.md']),
+    deep: new Set(['something_else.md']),
+  });
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: feedback fixture in DEEP-INDEX → 1 warn', async () => {
+  const ctx = await loadWithIndexes('feedback-clean.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-clean.md']),
+  });
+  const issues = memoryFeedbackInHotTier(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'memory-feedback-in-hot-tier');
+  assert.match(issues[0]?.message ?? '', /MEMORY\.md/);
+});
+
+test('memoryFeedbackInHotTier: non-feedback fixture in DEEP-INDEX → 0 issues (only feedback gates)', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(),
+    deep: new Set(['clean.md']),
+  });
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: no indexes → 0 issues (skill-tier scan)', async () => {
+  const ctx = await loadFixture('feedback-clean.md');
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: broken-yaml → 0 issues (self-guarded)', async () => {
+  const ctx = await loadWithIndexes('broken-yaml.md', {
+    hot: new Set(['broken-yaml.md']),
+    deep: new Set(),
+  });
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
 
 // --- registry shape -----------------------------------------------------
 

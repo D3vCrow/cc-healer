@@ -5,11 +5,11 @@
 // shape: { name, description, type, source, verify_by, [supersedes, superseded_by,
 // related] }.
 //
-// Phase 1 / V0:
-//   - 6 within-file checks implemented: required-fields, type-known, source-shape,
+// Phase 1 complete — all 8 Tier 2 checks live:
+//   - 6 within-file: required-fields, type-known, source-shape,
 //     verify-by-shape, verify-by-past, refs-resolve.
-//   - 2 stubs returning [] — index-parity + feedback-in-hot-tier (both cross-file,
-//     need a scan-level index pass; deferred to step 2b).
+//   - 2 cross-file: index-parity, feedback-in-hot-tier (both consume
+//     CheckContext.indexes built once per scan by buildMemoryIndexes).
 
 import { access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -214,23 +214,73 @@ export const memoryRefsResolve: Check = async (ctx) => {
   return issues;
 };
 
-// --- Phase 1 stubs — cross-file (deferred to step 2b) -------------------
+// --- Cross-file checks (Phase 1 step 2b) --------------------------------
+//
+// Both consume CheckContext.indexes, populated once per scan by
+// buildMemoryIndexes (src/memory-indexes.ts). When indexes are undefined
+// (skill-tier scan) or both sets are empty (no MEMORY.md / DEEP-INDEX.md
+// in the target dir), these checks self-skip to avoid false-positive
+// avalanches on non-Rook directories.
 
 /**
- * File linked from exactly one of MEMORY.md or DEEP-INDEX.md.
+ * File must be linked from exactly one of MEMORY.md or DEEP-INDEX.md.
+ * Linked from BOTH → double-listed (audit-trail-confusing).
+ * Linked from NEITHER → orphaned (no tier classification).
  * Severity: error.
- * Note: cross-file — needs a scan-level index pass.
+ * Source: cc-healer V1 spec Tier 2 row "file linked from exactly one of
+ * MEMORY.md or DEEP-INDEX.md".
  */
-export const memoryIndexParity: Check = (_ctx) => {
+export const memoryIndexParity: Check = (ctx) => {
+  if (!ctx.indexes) return []; // not a memory-tier scan
+  if (ctx.indexes.hot.size === 0 && ctx.indexes.deep.size === 0) return []; // no indexes present
+  const inHot = ctx.indexes.hot.has(ctx.file);
+  const inDeep = ctx.indexes.deep.has(ctx.file);
+  if (inHot && inDeep) {
+    return [
+      {
+        severity: 'error',
+        check: 'memory-index-parity',
+        file: ctx.file,
+        message: `${ctx.file} is linked from BOTH MEMORY.md and DEEP-INDEX.md (must be exactly one)`,
+      },
+    ];
+  }
+  if (!inHot && !inDeep) {
+    return [
+      {
+        severity: 'error',
+        check: 'memory-index-parity',
+        file: ctx.file,
+        message: `${ctx.file} is orphaned — linked from neither MEMORY.md nor DEEP-INDEX.md`,
+      },
+    ];
+  }
   return [];
 };
 
 /**
- * `feedback` type entries appear only in MEMORY.md (never DEEP-INDEX).
+ * Files with `type: feedback` should appear only in MEMORY.md (hot tier),
+ * never DEEP-INDEX.md. Behavior rule: feedback never demotes to deep.
  * Severity: warn.
- * Note: cross-file — needs a scan-level index pass.
+ * Source: cc-healer V1 spec Tier 2 row "feedback type appears only in MEMORY.md".
  */
-export const memoryFeedbackInHotTier: Check = (_ctx) => {
+export const memoryFeedbackInHotTier: Check = (ctx) => {
+  if (!ctx.indexes) return []; // not a memory-tier scan
+  if (ctx.indexes.hot.size === 0 && ctx.indexes.deep.size === 0) return []; // no indexes present
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  const type = ctx.parsed.data.type;
+  if (type !== 'feedback') return [];
+  if (ctx.indexes.deep.has(ctx.file)) {
+    return [
+      {
+        severity: 'warn',
+        check: 'memory-feedback-in-hot-tier',
+        file: ctx.file,
+        message: `feedback-type entries should appear only in MEMORY.md, but ${ctx.file} is linked from DEEP-INDEX.md`,
+      },
+    ];
+  }
   return [];
 };
 

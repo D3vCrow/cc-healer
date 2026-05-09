@@ -4,7 +4,8 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
 import { skillChecks, memoryChecks } from './checks/index.js';
-import type { Check, CheckContext } from './checks/index.js';
+import { buildMemoryIndexes } from './memory-indexes.js';
+import type { Check, CheckContext, MemoryIndexes } from './checks/index.js';
 import type { Issue, CheckReport } from './types.js';
 
 const VERSION = '0.0.1';
@@ -42,6 +43,7 @@ type TierConfig = {
   target: string;
   checks: ReadonlyArray<Check>;
   skipFiles?: ReadonlySet<string>;
+  buildIndexes?: (target: string) => Promise<MemoryIndexes>;
 };
 
 function cwdToProjectSlug(cwd: string): string {
@@ -62,6 +64,7 @@ function resolveTier(tier: string): TierConfig | null {
         target: expandTilde(`~/.claude/projects/${cwdToProjectSlug(process.cwd())}/memory`),
         checks: memoryChecks,
         skipFiles: new Set(['MEMORY.md', 'DEEP-INDEX.md']),
+        buildIndexes: buildMemoryIndexes,
       };
     case 'settings':
     case 'plugins':
@@ -73,7 +76,11 @@ function resolveTier(tier: string): TierConfig | null {
 
 async function scanDir(
   target: string,
-  opts: { checks: ReadonlyArray<Check>; skipFiles?: ReadonlySet<string> },
+  opts: {
+    checks: ReadonlyArray<Check>;
+    skipFiles?: ReadonlySet<string>;
+    buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+  },
 ): Promise<CheckReport> {
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
@@ -90,6 +97,10 @@ async function scanDir(
   } catch {
     return { scanned: 0, withFrontmatter: 0, parseFailures: 0, issues, durationMs: Date.now() - start };
   }
+
+  // Build cross-file indexes once per scan, before per-file checks. No-op for
+  // tiers (skills, settings) that don't supply a buildIndexes function.
+  const indexes = opts.buildIndexes ? await opts.buildIndexes(target) : undefined;
 
   for (const name of entries) {
     if (!name.endsWith('.md')) continue;
@@ -127,6 +138,7 @@ async function scanDir(
       env: process.env,
       cwd,
       devcrowRoot,
+      indexes,
     };
 
     if (!result.ok) {
@@ -228,7 +240,11 @@ async function main(): Promise<number> {
     config = { target: expandTilde(positional), checks: skillChecks };
   }
 
-  const report = await scanDir(config.target, { checks: config.checks, skipFiles: config.skipFiles });
+  const report = await scanDir(config.target, {
+    checks: config.checks,
+    skipFiles: config.skipFiles,
+    buildIndexes: config.buildIndexes,
+  });
   printReport(config.target, report);
 
   return report.issues.filter((i) => i.severity === 'error').length;
