@@ -6,11 +6,13 @@
 // related] }.
 //
 // Phase 1 / V0:
-//   - 2 checks implemented: required-fields, type-known
-//   - 6 stubs returning [] — implement when needed.
-//
-// Cross-file checks (index parity, feedback-only-in-MEMORY) need a scan-level
-// build pass that doesn't yet exist; deferred to a separate infra step.
+//   - 6 within-file checks implemented: required-fields, type-known, source-shape,
+//     verify-by-shape, verify-by-past, refs-resolve.
+//   - 2 stubs returning [] — index-parity + feedback-in-hot-tier (both cross-file,
+//     need a scan-level index pass; deferred to step 2b).
+
+import { access } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
@@ -18,6 +20,12 @@ import type { Check } from './types.js';
 const REQUIRED_FIELDS = ['name', 'description', 'type', 'source', 'verify_by'] as const;
 
 const KNOWN_TYPES = new Set(['user', 'feedback', 'project', 'reference', 'pattern', 'failure']);
+
+// `source: YYYY-MM-DD <text>` — date prefix + at least one non-whitespace char in the trigger text.
+const SOURCE_SHAPE = /^\d{4}-\d{2}-\d{2}\s+\S/;
+
+// `verify_by: YYYY-MM-DD` (the alternative `stable` is checked separately).
+const VERIFY_BY_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 
 // --- Implemented (Phase 1) ----------------------------------------------
 
@@ -76,40 +84,137 @@ export const memoryTypeKnown: Check = (ctx) => {
   return [];
 };
 
-// --- Phase 1 stubs (per spec Tier 2 table) ------------------------------
-
 /**
  * `source` matches `YYYY-MM-DD <text>` shape.
  * Severity: warn.
+ * Source: cc-healer V1 spec Tier 2 row "source matches YYYY-MM-DD <text> shape".
  */
-export const memorySourceShape: Check = (_ctx) => {
+export const memorySourceShape: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  const source = ctx.parsed.data.source;
+  if (source === undefined) return []; // memoryRequiredFields owns the missing case
+  if (typeof source !== 'string') {
+    return [
+      {
+        severity: 'warn',
+        check: 'memory-source-shape',
+        file: ctx.file,
+        message: `source field is not a string (got ${typeof source})`,
+      },
+    ];
+  }
+  if (!SOURCE_SHAPE.test(source)) {
+    return [
+      {
+        severity: 'warn',
+        check: 'memory-source-shape',
+        file: ctx.file,
+        message: `source ${JSON.stringify(source)} doesn't match \`YYYY-MM-DD <text>\` shape`,
+      },
+    ];
+  }
   return [];
 };
 
 /**
  * `verify_by` is `YYYY-MM-DD` or `stable`.
  * Severity: warn.
+ * Source: cc-healer V1 spec Tier 2 row "verify_by is YYYY-MM-DD or stable".
  */
-export const memoryVerifyByShape: Check = (_ctx) => {
+export const memoryVerifyByShape: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  const verifyBy = ctx.parsed.data.verify_by;
+  if (verifyBy === undefined) return []; // memoryRequiredFields owns the missing case
+  if (typeof verifyBy !== 'string') {
+    return [
+      {
+        severity: 'warn',
+        check: 'memory-verify-by-shape',
+        file: ctx.file,
+        message: `verify_by field is not a string (got ${typeof verifyBy})`,
+      },
+    ];
+  }
+  if (verifyBy !== 'stable' && !VERIFY_BY_DATE_SHAPE.test(verifyBy)) {
+    return [
+      {
+        severity: 'warn',
+        check: 'memory-verify-by-shape',
+        file: ctx.file,
+        message: `verify_by ${JSON.stringify(verifyBy)} is not \`stable\` or \`YYYY-MM-DD\``,
+      },
+    ];
+  }
   return [];
 };
 
 /**
  * `verify_by` past today (if not `stable`).
  * Severity: info.
+ * Source: cc-healer V1 spec Tier 2 row "verify_by past today (if not stable)".
+ * Note: shape check owns malformed values; this check only fires on well-formed past dates.
+ * YYYY-MM-DD lexicographic compare is correct because ISO 8601 sorts as text.
  */
-export const memoryVerifyByPast: Check = (_ctx) => {
+export const memoryVerifyByPast: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  const verifyBy = ctx.parsed.data.verify_by;
+  if (typeof verifyBy !== 'string') return []; // shape check owns
+  if (verifyBy === 'stable') return [];
+  if (!VERIFY_BY_DATE_SHAPE.test(verifyBy)) return []; // shape check owns
+  if (verifyBy < ctx.today) {
+    return [
+      {
+        severity: 'info',
+        check: 'memory-verify-by-past',
+        file: ctx.file,
+        message: `verify_by ${verifyBy} is past today (${ctx.today})`,
+      },
+    ];
+  }
   return [];
 };
 
 /**
- * `supersedes` / `superseded_by` / `related` filenames exist in same dir.
+ * Each filename in `supersedes` / `superseded_by` / `related` must exist in the
+ * same directory as the memory file. Accepts either a single string or an array
+ * of strings for each field.
  * Severity: warn.
- * Note: needs fs.access — implement async when wired up.
+ * Source: cc-healer V1 spec Tier 2 row "supersedes/superseded_by/related filenames exist".
  */
-export const memoryRefsResolve: Check = (_ctx) => {
-  return [];
+export const memoryRefsResolve: Check = async (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  const dir = dirname(ctx.filePath);
+  const issues: Issue[] = [];
+  const fields = [
+    { key: 'supersedes', value: ctx.parsed.data.supersedes },
+    { key: 'superseded_by', value: ctx.parsed.data.superseded_by },
+    { key: 'related', value: ctx.parsed.data.related },
+  ];
+  for (const { key, value } of fields) {
+    if (value === undefined) continue;
+    const refs = Array.isArray(value) ? value : [value];
+    for (const ref of refs) {
+      if (typeof ref !== 'string' || ref.length === 0) continue;
+      try {
+        await access(join(dir, ref));
+      } catch {
+        issues.push({
+          severity: 'warn',
+          check: 'memory-refs-resolve',
+          file: ctx.file,
+          message: `${key} references missing file: ${ref}`,
+        });
+      }
+    }
+  }
+  return issues;
 };
+
+// --- Phase 1 stubs — cross-file (deferred to step 2b) -------------------
 
 /**
  * File linked from exactly one of MEMORY.md or DEEP-INDEX.md.

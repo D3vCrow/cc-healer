@@ -120,13 +120,124 @@ test('memoryTypeKnown: broken-yaml (parse failed) → 0 issues (self-guarded)', 
   assert.deepEqual(memoryTypeKnown(ctx), []);
 });
 
-// --- Phase 1 stubs: every stub returns [] on every fixture --------------
+// --- memory-source-shape (impl) ----------------------------------------
+
+test('memorySourceShape: clean fixture (YYYY-MM-DD + text) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memorySourceShape(ctx), []);
+});
+
+test('memorySourceShape: bad-source fixture (no date prefix) → 1 warn', async () => {
+  const ctx = await loadFixture('bad-source.md');
+  const issues = memorySourceShape(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'memory-source-shape');
+  assert.match(issues[0]?.message ?? '', /no date prefix here/);
+});
+
+test('memorySourceShape: missing-required (no source field) → 0 issues (required-fields owns)', async () => {
+  const ctx = await loadFixture('missing-required.md');
+  assert.deepEqual(memorySourceShape(ctx), []);
+});
+
+test('memorySourceShape: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(memorySourceShape(ctx), []);
+});
+
+// --- memory-verify-by-shape (impl) -------------------------------------
+
+test('memoryVerifyByShape: clean fixture (YYYY-MM-DD) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memoryVerifyByShape(ctx), []);
+});
+
+test('memoryVerifyByShape: verify-by-stable (stable) → 0 issues', async () => {
+  const ctx = await loadFixture('verify-by-stable.md');
+  assert.deepEqual(memoryVerifyByShape(ctx), []);
+});
+
+test('memoryVerifyByShape: bad-verify-by (verify_by=soon) → 1 warn', async () => {
+  const ctx = await loadFixture('bad-verify-by.md');
+  const issues = memoryVerifyByShape(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'memory-verify-by-shape');
+  assert.match(issues[0]?.message ?? '', /soon/);
+});
+
+test('memoryVerifyByShape: missing-required (no verify_by) → 0 issues (required-fields owns)', async () => {
+  const ctx = await loadFixture('missing-required.md');
+  assert.deepEqual(memoryVerifyByShape(ctx), []);
+});
+
+// --- memory-verify-by-past (impl) --------------------------------------
+
+test('memoryVerifyByPast: clean fixture (verify_by=2027-01-01 future) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
+test('memoryVerifyByPast: verify-by-stable → 0 issues', async () => {
+  const ctx = await loadFixture('verify-by-stable.md');
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
+test('memoryVerifyByPast: verify-by-past (2025-01-01 < 2026-05-06) → 1 info', async () => {
+  const ctx = await loadFixture('verify-by-past.md');
+  const issues = memoryVerifyByPast(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'info');
+  assert.equal(issues[0]?.check, 'memory-verify-by-past');
+  assert.match(issues[0]?.message ?? '', /2025-01-01.*2026-05-06/);
+});
+
+test('memoryVerifyByPast: verify-by-past with today pinned to before that date → 0 issues', async () => {
+  const ctx = await loadFixture('verify-by-past.md', { today: '2024-12-01' });
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
+test('memoryVerifyByPast: bad-verify-by (verify_by=soon) → 0 issues (shape check owns malformed)', async () => {
+  const ctx = await loadFixture('bad-verify-by.md');
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
+test('memoryVerifyByPast: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
+// --- memory-refs-resolve (impl, async) ---------------------------------
+
+test('memoryRefsResolve: clean fixture (no ref fields) → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(await memoryRefsResolve(ctx), []);
+});
+
+test('memoryRefsResolve: good-ref (supersedes resolves to clean.md) → 0 issues', async () => {
+  const ctx = await loadFixture('good-ref.md');
+  assert.deepEqual(await memoryRefsResolve(ctx), []);
+});
+
+test('memoryRefsResolve: bad-ref (supersedes points to missing file) → 1 warn', async () => {
+  const ctx = await loadFixture('bad-ref.md');
+  const issues = await memoryRefsResolve(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'memory-refs-resolve');
+  assert.match(issues[0]?.message ?? '', /supersedes/);
+  assert.match(issues[0]?.message ?? '', /does-not-exist\.md/);
+});
+
+test('memoryRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(await memoryRefsResolve(ctx), []);
+});
+
+// --- Phase 1 stubs: cross-file checks (deferred to step 2b) -------------
 
 const stubs: ReadonlyArray<readonly [string, (ctx: CheckContext) => unknown]> = [
-  ['memorySourceShape', memorySourceShape],
-  ['memoryVerifyByShape', memoryVerifyByShape],
-  ['memoryVerifyByPast', memoryVerifyByPast],
-  ['memoryRefsResolve', memoryRefsResolve],
   ['memoryIndexParity', memoryIndexParity],
   ['memoryFeedbackInHotTier', memoryFeedbackInHotTier],
 ];
