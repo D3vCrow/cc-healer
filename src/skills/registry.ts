@@ -10,7 +10,9 @@
 // (vetted 2026-05-08, GREEN). See
 // knowledge/research/2026-05-08-vet-nexu-io-open-design.md § "Steal-worthy #2".
 
-import { basename } from 'node:path';
+// Note: `node:path.basename` is platform-aware — on POSIX hosts it does NOT
+// strip Windows backslashes, breaking cross-platform tests on macOS/Linux CI.
+// We split on either separator instead so the function is OS-agnostic.
 
 /**
  * Maps deprecated skill ids to their current canonical id. Add an entry here
@@ -44,6 +46,6 @@ export function resolveSkillId(
  * packaged skills arrive, this needs updating.
  */
 export function skillIdFromFilename(filename: string): string {
-  const base = basename(filename);
+  const base = filename.split(/[\\/]/).pop() ?? filename;
   return base.endsWith('.md') ? base.slice(0, -3) : base;
 }
