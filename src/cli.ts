@@ -31,7 +31,7 @@ Usage:
 
 Tiers (per docs/cc-healer-v1-spec.md):
   skills    — Tier 1, ~/.claude/commands (9 checks live)
-  memory    — Tier 2, ~/.claude/projects/<slug>/memory (2 of 8 checks live; rest stubs)
+  memory    — Tier 2, ~/.claude/projects/<slug>/memory (8 checks live)
   settings  — Tier 3, ~/.claude/settings.json (not yet)
   plugins   — Tier 4, plugin install registry (not yet)
 
