@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "phantom-plugin@nowhere-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "F:/this/path/does/not/exist/anywhere/2026-05-11",
+        "version": "0.0.1",
+        "installedAt": "2026-05-11T00:00:00.000Z",
+        "lastUpdated": "2026-05-11T00:00:00.000Z"
+      }
+    ]
+  }
+}

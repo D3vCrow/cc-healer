@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "fixture-plugin@fixture-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "FIXTURE_DIR_PLACEHOLDER",
+        "version": "1.0.0",
+        "installedAt": "2026-05-11T00:00:00.000Z",
+        "lastUpdated": "2026-05-11T00:00:00.000Z"
+      }
+    ]
+  }
+}

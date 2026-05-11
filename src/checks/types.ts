@@ -16,6 +16,18 @@ export interface MemoryIndexes {
   deep: Set<string>;  // filenames linked from DEEP-INDEX.md
 }
 
+/**
+ * Plugin-tier index. Built once per scan from `~/.claude/plugins/installed_plugins.json`.
+ * Cross-file checks read this to answer "is plugin <id> installed?".
+ *
+ * Plugin IDs follow the `<plugin>@<marketplace>` shape used by the registry
+ * (e.g. `watch@claude-video`, `superpowers@claude-plugins-official`). Absent
+ * for non-plugin tier scans.
+ */
+export interface PluginIndex {
+  installedIds: Set<string>;
+}
+
 export interface CheckContext {
   file: string;                                  // display name (basename usually)
   filePath: string;                              // absolute path, used for file-ref resolution
@@ -26,6 +38,7 @@ export interface CheckContext {
   cwd: string;                                   // process.cwd() in production; used by fileRefsResolve as one of two roots
   devcrowRoot: string;                           // F:/DevCrow/Dev in production; second root for fileRefsResolve
   indexes?: MemoryIndexes;                       // cross-file index for memory tier; undefined for skill-tier scans
+  pluginIndex?: PluginIndex;                     // cross-file index for plugin tier; undefined when not plumbed
 }
 
 export type Check = (ctx: CheckContext) => Issue[] | Promise<Issue[]>;
