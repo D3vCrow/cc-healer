@@ -63,7 +63,9 @@ function resolveTier(tier: string): TierConfig | null {
       return {
         target: expandTilde(`~/.claude/projects/${cwdToProjectSlug(process.cwd())}/memory`),
         checks: memoryChecks,
-        skipFiles: new Set(['MEMORY.md', 'DEEP-INDEX.md']),
+        // DEEP-INDEX.md stays skipped (no hot-tier check fires on it per design spec §4.4);
+        // MEMORY.md is scanned so memory-hot-tier-entry-shape runs against it (filename-gated).
+        skipFiles: new Set(['DEEP-INDEX.md']),
         buildIndexes: buildMemoryIndexes,
       };
     case 'settings':

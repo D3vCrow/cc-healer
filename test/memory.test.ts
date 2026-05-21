@@ -14,6 +14,7 @@ import {
   memoryRefsResolve,
   memoryIndexParity,
   memoryFeedbackInHotTier,
+  memoryHotTierEntryShape,
   memoryChecks,
 } from '../src/checks/memory.ts';
 import type { CheckContext } from '../src/checks/types.ts';
@@ -297,6 +298,26 @@ test('memoryIndexParity: both indexes empty → 0 issues (no MEMORY/DEEP-INDEX i
   assert.deepEqual(memoryIndexParity(ctx), []);
 });
 
+test('memoryIndexParity: MEMORY.md itself → 0 issues (index file, not a memory entry)', async () => {
+  // MEMORY.md never appears in its own hot index (it IS the hot index).
+  // Without self-guard, this would misfire as "orphaned" once the runner stops skipping it.
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['other.md']),
+    deep: new Set(['another.md']),
+  });
+  const ctxAsMemoryMd: CheckContext = { ...ctx, file: 'MEMORY.md' };
+  assert.deepEqual(memoryIndexParity(ctxAsMemoryMd), []);
+});
+
+test('memoryIndexParity: DEEP-INDEX.md itself → 0 issues (index file, not a memory entry)', async () => {
+  const ctx = await loadWithIndexes('clean.md', {
+    hot: new Set(['other.md']),
+    deep: new Set(['another.md']),
+  });
+  const ctxAsDeepIndex: CheckContext = { ...ctx, file: 'DEEP-INDEX.md' };
+  assert.deepEqual(memoryIndexParity(ctxAsDeepIndex), []);
+});
+
 // --- memory-feedback-in-hot-tier (impl, cross-file) --------------------
 
 test('memoryFeedbackInHotTier: feedback fixture in hot tier → 0 issues', async () => {
@@ -340,8 +361,49 @@ test('memoryFeedbackInHotTier: broken-yaml → 0 issues (self-guarded)', async (
   assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
 });
 
+// --- memory-hot-tier-entry-shape (impl) --------------------------------
+//
+// Filename-gated: fires only on MEMORY.md. We override ctx.file via spread
+// so fixtures can have any name on disk but present as MEMORY.md to the check.
+
+async function loadAsMemoryMd(name: string): Promise<CheckContext> {
+  const ctx = await loadFixture(name);
+  return { ...ctx, file: 'MEMORY.md' };
+}
+
+test('memoryHotTierEntryShape: clean MEMORY.md fixture (all entries ≤150) → 0 issues', async () => {
+  const ctx = await loadAsMemoryMd('hot-tier-clean.md');
+  assert.deepEqual(memoryHotTierEntryShape(ctx), []);
+});
+
+test('memoryHotTierEntryShape: oversized fixture → 2 warns (skip-list excludes top-of-file + blockquote)', async () => {
+  const ctx = await loadAsMemoryMd('hot-tier-oversized.md');
+  const issues = memoryHotTierEntryShape(ctx);
+  assert.equal(issues.length, 2);
+  assert.equal(issues.every((i) => i.severity === 'warn'), true);
+  assert.equal(issues.every((i) => i.check === 'memory-hot-tier-entry-shape'), true);
+  assert.equal(issues.every((i) => i.file === 'MEMORY.md'), true);
+  assert.equal(issues.every((i) => typeof i.line === 'number'), true);
+  assert.equal(issues.every((i) => /exceeds 150 chars \(\d+ chars\)/.test(i.message)), true);
+});
+
+test('memoryHotTierEntryShape: oversized fixture line numbers correspond to section entries (not top-of-file or blockquote)', async () => {
+  const ctx = await loadAsMemoryMd('hot-tier-oversized.md');
+  const issues = memoryHotTierEntryShape(ctx);
+  // Fixture layout: top-of-file oversized at L5, section entry at L9, blockquote at L12, sub-section entry at L15.
+  // Only L9 and L15 should fire (top-of-file + blockquote skipped).
+  const lines = issues.map((i) => i.line).sort((a, b) => (a ?? 0) - (b ?? 0));
+  assert.deepEqual(lines, [9, 15]);
+});
+
+test('memoryHotTierEntryShape: non-MEMORY.md file → 0 issues (self-guarded)', async () => {
+  // ctx.file = 'clean.md' (not MEMORY.md) — check returns early.
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memoryHotTierEntryShape(ctx), []);
+});
+
 // --- registry shape -----------------------------------------------------
 
-test('memoryChecks registry contains all 8 checks', () => {
-  assert.equal(memoryChecks.length, 8);
+test('memoryChecks registry contains all 9 checks', () => {
+  assert.equal(memoryChecks.length, 9);
 });

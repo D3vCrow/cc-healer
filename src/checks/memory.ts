@@ -5,11 +5,13 @@
 // shape: { name, description, type, source, verify_by, [supersedes, superseded_by,
 // related] }.
 //
-// Phase 1 complete — all 8 Tier 2 checks live:
+// Phase 1 complete — 9 Tier 2 checks live:
 //   - 6 within-file: required-fields, type-known, source-shape,
 //     verify-by-shape, verify-by-past, refs-resolve.
 //   - 2 cross-file: index-parity, feedback-in-hot-tier (both consume
 //     CheckContext.indexes built once per scan by buildMemoryIndexes).
+//   - 1 hot-tier shape: hot-tier-entry-shape (MEMORY.md-only line-length gate
+//     per docs/superpowers/specs/2026-05-17-memory-index-trim-and-gate-design.md §4).
 
 import { access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -233,6 +235,8 @@ export const memoryRefsResolve: Check = async (ctx) => {
 export const memoryIndexParity: Check = (ctx) => {
   if (!ctx.indexes) return []; // not a memory-tier scan
   if (ctx.indexes.hot.size === 0 && ctx.indexes.deep.size === 0) return []; // no indexes present
+  // Index files themselves are the indexes — not memory entries — so they're never in either set by design.
+  if (ctx.file === 'MEMORY.md' || ctx.file === 'DEEP-INDEX.md') return [];
   const inHot = ctx.indexes.hot.has(ctx.file);
   const inDeep = ctx.indexes.deep.has(ctx.file);
   if (inHot && inDeep) {
@@ -284,6 +288,54 @@ export const memoryFeedbackInHotTier: Check = (ctx) => {
   return [];
 };
 
+// --- Hot-tier shape check (Phase 1 step 5) ------------------------------
+//
+// MEMORY.md is the Rook v2 hot tier, always loaded into every Claude Code
+// session. Spec contract: each index entry ≤150 chars. Un-gated, the shape
+// rotted into 88% bloat by 2026-05-17 audit. Phase 1 (manual trim 2026-05-18)
+// paid the debt; this check keeps the post-trim state from drifting back.
+
+// Entry shape: `- [Title](file.md) — hook`. Bare list-item check that excludes
+// section headers, top-of-file frontmatter-style block, and blockquotes.
+const HOT_TIER_ENTRY_SHAPE = /^- \[.*\]\(.*\.md\)/;
+const HOT_TIER_MAX_CHARS = 150;
+
+/**
+ * MEMORY.md entries (hot tier, always-loaded) must be ≤150 chars to bound
+ * session context cost. Severity: warn (quality contract, not correctness —
+ * over-length parses fine, just inflates every-session token spend).
+ * Skip-list: section headers (^##, ^###), top-of-file block before first
+ * ## heading, blockquotes (^> ). Fires only on MEMORY.md; DEEP-INDEX.md is
+ * out of scope for Phase 2 per design spec §4.4.
+ * Source: docs/superpowers/specs/2026-05-17-memory-index-trim-and-gate-design.md §4.
+ */
+export const memoryHotTierEntryShape: Check = (ctx) => {
+  if (ctx.file !== 'MEMORY.md') return [];
+  const issues: Issue[] = [];
+  const lines = ctx.content.split(/\r?\n/);
+  let inFrontmatterBlock = true;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('## ') || line.startsWith('### ')) {
+      inFrontmatterBlock = false;
+      continue;
+    }
+    if (inFrontmatterBlock) continue;
+    if (line.startsWith('> ')) continue;
+    if (!HOT_TIER_ENTRY_SHAPE.test(line)) continue;
+    if (line.length > HOT_TIER_MAX_CHARS) {
+      issues.push({
+        severity: 'warn',
+        check: 'memory-hot-tier-entry-shape',
+        file: ctx.file,
+        line: i + 1,
+        message: `entry exceeds ${HOT_TIER_MAX_CHARS} chars (${line.length} chars)`,
+      });
+    }
+  }
+  return issues;
+};
+
 // --- Registry -----------------------------------------------------------
 
 export const memoryChecks: ReadonlyArray<Check> = [
@@ -295,4 +347,5 @@ export const memoryChecks: ReadonlyArray<Check> = [
   memoryRefsResolve,
   memoryIndexParity,
   memoryFeedbackInHotTier,
+  memoryHotTierEntryShape,
 ];
