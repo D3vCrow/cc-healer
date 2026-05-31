@@ -66,6 +66,85 @@ test('parser: broken-yaml memory fixture surfaces unterminated frontmatter', asy
   assert.match(ctx.parsed.errors.join(' '), /unterminated|closing/i);
 });
 
+test('parser: block-style sequence under a key parses as a string array (regression: 79/176 silent skip)', () => {
+  const content = [
+    '---',
+    'name: Test',
+    'description: d',
+    'type: project',
+    'source: 2026-04-22 x',
+    'verify_by: 2026-05-22',
+    'related:',
+    '  - feedback_bounded_exploration.md',
+    '  - pattern_hook_chain_collapse.md',
+    'originSessionId: abc',
+    '---',
+    'body',
+  ].join('\n');
+  const parsed = parseFrontmatter(content);
+  assert.equal(parsed.ok, true, `block sequence should parse cleanly, got: ${parsed.errors.join('; ')}`);
+  assert.deepEqual(parsed.data.related, [
+    'feedback_bounded_exploration.md',
+    'pattern_hook_chain_collapse.md',
+  ]);
+  // Scalar after the block sequence must re-attach at root indent, not the list.
+  assert.equal(parsed.data.originSessionId, 'abc');
+  assert.equal(parsed.data.verify_by, '2026-05-22');
+});
+
+test('parser: block sequence nested under an object key (metadata wrapper) parses', () => {
+  const content = [
+    '---',
+    'name: Test',
+    'metadata:',
+    '  node_type: memory',
+    '  related:',
+    '    - a.md',
+    '    - b.md',
+    '---',
+    'body',
+  ].join('\n');
+  const parsed = parseFrontmatter(content);
+  assert.equal(parsed.ok, true, `nested block sequence errors: ${parsed.errors.join('; ')}`);
+  const meta = parsed.data.metadata as Record<string, unknown>;
+  assert.equal(meta.node_type, 'memory');
+  assert.deepEqual(meta.related, ['a.md', 'b.md']);
+});
+
+test('parser: flow array still parses (no regression from block-sequence support)', () => {
+  const parsed = parseFrontmatter('---\nname: T\nrelated: [a.md, b.md]\n---\nbody');
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.data.related, ['a.md', 'b.md']);
+});
+
+test('memoryVerifyByPast: fires on a block-sequence file with past verify_by (end-to-end of the parser fix)', () => {
+  const content = [
+    '---',
+    'name: Stale',
+    'description: d',
+    'type: project',
+    'source: 2026-04-22 x',
+    'verify_by: 2026-04-01',
+    'related:',
+    '  - feedback_bounded_exploration.md',
+    '---',
+    'body',
+  ].join('\n');
+  const ctx: CheckContext = {
+    file: 'stale.md',
+    filePath: join(FIXTURES, 'stale.md'),
+    parsed: parseFrontmatter(content),
+    content,
+    today: '2026-05-01',
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    devcrowRoot: TEST_DEVCROW_ROOT,
+  };
+  const issues = memoryVerifyByPast(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.check, 'memory-verify-by-past');
+});
+
 // --- memory-required-fields (impl) -------------------------------------
 
 test('memoryRequiredFields: clean fixture (all 5 fields) → 0 issues', async () => {

@@ -8,11 +8,15 @@
 //       deepkey: value
 //       deepkey: [x, y]
 //
+//   key:                         (block sequence opens, `- item` children below)
+//     - item-a
+//     - item-b
+//
 // NOT a general YAML parser. Specifically does NOT support:
 //   - block scalars (| or >)
-//   - block-style sequences (- item under a key)
 //   - anchors / aliases / tags
 //   - multi-document streams
+//   - nested block sequences (a `- ` item that itself contains a `- ` list)
 // These shapes don't appear in the workspace's frontmatter; if they're added later,
 // extend here and add tests.
 
@@ -82,7 +86,15 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
   const errors: string[] = [];
   const root: Record<string, unknown> = {};
 
-  type Frame = { indent: number; container: Record<string, unknown> };
+  // A frame opened by an empty-value `key:` also records its parent container +
+  // key, so a following block sequence (`- item`) can re-attach it as an array.
+  type Frame = {
+    indent: number;
+    container: Record<string, unknown>;
+    parent?: Record<string, unknown>;
+    key?: string;
+    list?: unknown[];
+  };
   const stack: Frame[] = [{ indent: -1, container: root }];
 
   const lines = yaml.split(/\r?\n/);
@@ -95,6 +107,29 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
     const indentMatch = rawLine.match(/^\s*/);
     const indent = indentMatch ? indentMatch[0].length : 0;
     const trimmed = rawLine.slice(indent);
+
+    // Block-style sequence item (`- value` or bare `-`). Attaches to the nearest
+    // enclosing empty-value key, whose child object is converted to an array on
+    // the first item seen. Dedent keeps frames strictly shallower than this item.
+    if (trimmed === '-' || trimmed.startsWith('- ')) {
+      while (stack.length > 1) {
+        const t = stack[stack.length - 1];
+        if (!t || t.indent >= indent) stack.pop();
+        else break;
+      }
+      const top = stack[stack.length - 1];
+      if (!top || top.key === undefined || top.parent === undefined) {
+        errors.push(`line ${lineIdx + 1}: sequence item has no parent key`);
+        continue;
+      }
+      if (!top.list) {
+        top.list = [];
+        top.parent[top.key] = top.list;
+      }
+      const itemRaw = trimmed === '-' ? '' : trimmed.slice(2).trim();
+      if (itemRaw !== '') top.list.push(parseScalar(itemRaw));
+      continue;
+    }
 
     while (stack.length > 1) {
       const top = stack[stack.length - 1];
@@ -121,7 +156,7 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
     if (valueStr === '') {
       const child: Record<string, unknown> = {};
       parent[key] = child;
-      stack.push({ indent, container: child });
+      stack.push({ indent, container: child, parent, key });
     } else if (isTrueFlowArray(valueStr)) {
       parent[key] = parseFlowArray(valueStr);
     } else {
