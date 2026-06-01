@@ -316,6 +316,7 @@ export const memoryHotTierEntryShape: Check = (ctx) => {
   let inFrontmatterBlock = true;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
     if (line.startsWith('## ') || line.startsWith('### ')) {
       inFrontmatterBlock = false;
       continue;
