@@ -15,6 +15,9 @@ import {
   descriptionLength,
   legacyNoDevcrow,
   verifyByPast,
+  neverBlockPresent,
+  recommendedNextStepPresent,
+  argumentHintPresent,
   skillChecks,
 } from '../src/checks/skills.ts';
 import type { CheckContext } from '../src/checks/types.ts';
@@ -399,8 +402,116 @@ for (const [name, check] of stubs) {
   });
 }
 
+// --- skill-structure footer checks (Phase 1A) --------------------------
+//
+// Inline content (no fixture files) — these checks scan body structure, so
+// constructing the .md text in-test is clearer than a fixture per case.
+
+function ctxFrom(content: string, file = 'inline.md'): CheckContext {
+  return {
+    file,
+    filePath: join(FIXTURES, file),
+    parsed: parseFrontmatter(content),
+    content,
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    devcrowRoot: TEST_DEVCROW_ROOT,
+  };
+}
+
+const SKILL_WITH_FOOTERS = [
+  '---',
+  'description: A skill',
+  'argument-hint: "[topic]"',
+  '---',
+  '',
+  'Do the thing with $ARGUMENTS.',
+  '',
+  '**NEVER**:',
+  '- Never skip the thing.',
+  '',
+  '### Recommended Next Step',
+  'Terminal.',
+  '',
+].join('\n');
+
+// --- never-block-present ------------------------------------------------
+
+test('neverBlockPresent: skill with **NEVER** block → 0 issues', () => {
+  assert.deepEqual(neverBlockPresent(ctxFrom(SKILL_WITH_FOOTERS)), []);
+});
+
+test('neverBlockPresent: skill without **NEVER** block → 1 warn', () => {
+  const content = '---\ndescription: A skill\n---\n\nBody only, no anti-rules.\n';
+  const issues = neverBlockPresent(ctxFrom(content));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'never-block-present');
+});
+
+test('neverBlockPresent: no frontmatter → 0 issues (not a skill)', () => {
+  assert.deepEqual(neverBlockPresent(ctxFrom('Just a plain markdown doc.\n')), []);
+});
+
+test('neverBlockPresent: **NEVER** only inside frontmatter does not count (body is scanned)', () => {
+  const content = '---\ndescription: "**NEVER** in desc"\n---\n\nNo footer here.\n';
+  const issues = neverBlockPresent(ctxFrom(content));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.check, 'never-block-present');
+});
+
+// --- recommended-next-step-present --------------------------------------
+
+test('recommendedNextStepPresent: skill with section → 0 issues', () => {
+  assert.deepEqual(recommendedNextStepPresent(ctxFrom(SKILL_WITH_FOOTERS)), []);
+});
+
+test('recommendedNextStepPresent: skill without section → 1 warn', () => {
+  const content = '---\ndescription: A skill\n---\n\nBody only.\n\n**NEVER**:\n- Never X.\n';
+  const issues = recommendedNextStepPresent(ctxFrom(content));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'recommended-next-step-present');
+});
+
+test('recommendedNextStepPresent: no frontmatter → 0 issues (not a skill)', () => {
+  assert.deepEqual(recommendedNextStepPresent(ctxFrom('Plain doc.\n')), []);
+});
+
+// --- argument-hint-present ----------------------------------------------
+
+test('argumentHintPresent: $ARGUMENTS + argument-hint → 0 issues', () => {
+  assert.deepEqual(argumentHintPresent(ctxFrom(SKILL_WITH_FOOTERS)), []);
+});
+
+test('argumentHintPresent: $ARGUMENTS without argument-hint → 1 warn', () => {
+  const content = '---\ndescription: A skill\n---\n\nUses $ARGUMENTS but no hint.\n';
+  const issues = argumentHintPresent(ctxFrom(content));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'argument-hint-present');
+});
+
+test('argumentHintPresent: bracket-style hint (parses as flow array) → 0 issues (regression: live false-positive)', () => {
+  const content = '---\ndescription: A skill\nargument-hint: [optional topic hint]\n---\n\nUses $ARGUMENTS.\n';
+  assert.deepEqual(argumentHintPresent(ctxFrom(content)), []);
+});
+
+test('argumentHintPresent: no $ARGUMENTS → 0 issues (even without hint)', () => {
+  const content = '---\ndescription: A skill\n---\n\nNo placeholder here.\n';
+  assert.deepEqual(argumentHintPresent(ctxFrom(content)), []);
+});
+
+test('argumentHintPresent: empty-string argument-hint with $ARGUMENTS → 1 warn (treated as unset)', () => {
+  const content = '---\ndescription: A skill\nargument-hint: ""\n---\n\nUses $ARGUMENTS.\n';
+  const issues = argumentHintPresent(ctxFrom(content));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.check, 'argument-hint-present');
+});
+
 // --- registry shape -----------------------------------------------------
 
-test('skillChecks registry contains all 9 checks', () => {
-  assert.equal(skillChecks.length, 9);
+test('skillChecks registry contains all 12 checks', () => {
+  assert.equal(skillChecks.length, 12);
 });

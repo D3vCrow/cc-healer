@@ -273,6 +273,87 @@ export const verifyByPast: Check = (ctx) => {
   ];
 };
 
+// --- Skill-structure footer checks (Phase 1A) --------------------------
+//
+// Convention source: feedback_skill_writing.md rules 4-6 (workspace memory).
+// These fire on any command/skill .md that has frontmatter (i.e. is a skill).
+// Plugin-authored commands that don't follow the DevCrow footer convention
+// surface here too — acceptable as a backlog signal at warn severity (exit
+// code counts errors only). Add a scoping exclude-list if plugin noise grows.
+//
+// All three scan ctx.parsed.body (post-frontmatter) so a `$ARGUMENTS` or
+// `**NEVER**` token inside the frontmatter block can't produce a false pass.
+
+const NEVER_BLOCK = /^\*\*NEVER\*\*/m;
+const NEXT_STEP = /Recommended Next Step/;
+
+/**
+ * Skill body must contain a `**NEVER**` anti-rule footer block.
+ * Severity: warn.
+ * Source: feedback_skill_writing.md rule 4 (every skill ends with a NEVER block).
+ */
+export const neverBlockPresent: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return []; // no frontmatter → not a skill
+  if (NEVER_BLOCK.test(ctx.parsed.body)) return [];
+  return [
+    {
+      severity: 'warn',
+      check: 'never-block-present',
+      file: ctx.file,
+      message: 'no **NEVER** anti-rule footer (skill-authoring rule 4)',
+    },
+  ];
+};
+
+/**
+ * Skill body must contain a "Recommended Next Step" section.
+ * Severity: warn.
+ * Source: feedback_skill_writing.md rule 5 (explicit next-step footer).
+ */
+export const recommendedNextStepPresent: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  if (NEXT_STEP.test(ctx.parsed.body)) return [];
+  return [
+    {
+      severity: 'warn',
+      check: 'recommended-next-step-present',
+      file: ctx.file,
+      message: 'no "Recommended Next Step" section (skill-authoring rule 5)',
+    },
+  ];
+};
+
+/**
+ * If the body uses the `$ARGUMENTS` placeholder, the frontmatter must declare
+ * a non-empty `argument-hint` so the skill picker can surface the expected
+ * argument. Skills that take no arguments are exempt.
+ * Severity: warn.
+ * Source: agentskills.io metadata spec + observed command convention.
+ */
+export const argumentHintPresent: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (Object.keys(ctx.parsed.data).length === 0) return [];
+  if (!ctx.parsed.body.includes('$ARGUMENTS')) return [];
+  const hint = ctx.parsed.data['argument-hint'];
+  // A hint counts as declared if the key holds a non-empty scalar OR a
+  // non-empty list. Bracket-style hints (`argument-hint: [topic]`) parse as a
+  // flow array, so an array with items is a present hint — not a missing one.
+  const declared =
+    (typeof hint === 'string' && hint.trim().length > 0) ||
+    (Array.isArray(hint) && hint.length > 0);
+  if (declared) return [];
+  return [
+    {
+      severity: 'warn',
+      check: 'argument-hint-present',
+      file: ctx.file,
+      message: 'body uses $ARGUMENTS but frontmatter has no argument-hint',
+    },
+  ];
+};
+
 // --- Registry -----------------------------------------------------------
 
 export const skillChecks: ReadonlyArray<Check> = [
@@ -285,4 +366,7 @@ export const skillChecks: ReadonlyArray<Check> = [
   descriptionLength,
   legacyNoDevcrow,
   verifyByPast,
+  neverBlockPresent,
+  recommendedNextStepPresent,
+  argumentHintPresent,
 ];
