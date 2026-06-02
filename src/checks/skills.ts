@@ -284,7 +284,10 @@ export const verifyByPast: Check = (ctx) => {
 // All three scan ctx.parsed.body (post-frontmatter) so a `$ARGUMENTS` or
 // `**NEVER**` token inside the frontmatter block can't produce a false pass.
 
-const NEVER_BLOCK = /^\*\*NEVER\*\*/m;
+// Accept all three in-use footer forms: `**NEVER**`, `**NEVER**:` (colon
+// outside bold), and `**NEVER:**` (colon inside bold). The old `/^\*\*NEVER\*\*/`
+// rejected colon-inside, false-flagging 4 skills that already had the footer.
+const NEVER_BLOCK = /^\*\*NEVER:?\*\*:?/m;
 const NEXT_STEP = /Recommended Next Step/;
 
 /**

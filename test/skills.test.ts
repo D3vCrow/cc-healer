@@ -454,6 +454,11 @@ test('neverBlockPresent: no frontmatter → 0 issues (not a skill)', () => {
   assert.deepEqual(neverBlockPresent(ctxFrom('Just a plain markdown doc.\n')), []);
 });
 
+test('neverBlockPresent: colon-inside form **NEVER:** counts (regression: 4 false positives)', () => {
+  const content = '---\ndescription: A skill\n---\n\nBody.\n\n**NEVER:**\n- Never X.\n';
+  assert.deepEqual(neverBlockPresent(ctxFrom(content)), []);
+});
+
 test('neverBlockPresent: **NEVER** only inside frontmatter does not count (body is scanned)', () => {
   const content = '---\ndescription: "**NEVER** in desc"\n---\n\nNo footer here.\n';
   const issues = neverBlockPresent(ctxFrom(content));
