@@ -162,6 +162,9 @@ export const memoryVerifyByShape: Check = (ctx) => {
 export const memoryVerifyByPast: Check = (ctx) => {
   if (!ctx.parsed.ok) return [];
   if (Object.keys(ctx.parsed.data).length === 0) return [];
+  // audit_* files are historical logs — a past verify_by is expected (they
+  // archive, they aren't re-verified). Exempt per the Rook stale-scan rule.
+  if (ctx.file.startsWith('audit_')) return [];
   const verifyBy = ctx.parsed.data.verify_by;
   if (typeof verifyBy !== 'string') return []; // shape check owns
   if (verifyBy === 'stable') return [];

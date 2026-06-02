@@ -288,6 +288,31 @@ test('memoryVerifyByPast: broken-yaml (parse failed) → 0 issues (self-guarded)
   assert.deepEqual(memoryVerifyByPast(ctx), []);
 });
 
+test('memoryVerifyByPast: audit_* file with past verify_by → 0 issues (historical, exempt)', () => {
+  const content = [
+    '---',
+    'name: A',
+    'description: d',
+    'type: project',
+    'source: 2026-05-01 weekly audit',
+    'verify_by: 2025-01-01',
+    '---',
+    'body',
+  ].join('\n');
+  const ctx: CheckContext = {
+    file: 'audit_weekly_2026-05-01.md',
+    filePath: join(FIXTURES, 'audit_weekly_2026-05-01.md'),
+    parsed: parseFrontmatter(content),
+    content,
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    devcrowRoot: TEST_DEVCROW_ROOT,
+  };
+  // verify_by 2025-01-01 is well past TEST_TODAY, but audit_* is exempt.
+  assert.deepEqual(memoryVerifyByPast(ctx), []);
+});
+
 // --- memory-refs-resolve (impl, async) ---------------------------------
 
 test('memoryRefsResolve: clean fixture (no ref fields) → 0 issues', async () => {
