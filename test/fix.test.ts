@@ -72,6 +72,38 @@ test('fixRefsResolve: unparseable message → unfixable, never throws', async ()
   assert.match(unfixable[0]!.reason, /could not parse/);
 });
 
+// --- fixRefsResolve: date-suffix → date-prefix flip fallback -------------
+// The caterham cluster: bare sibling refs written `<stem>-<date>.md` when the
+// real file uses the workspace's `<date>-<stem>.md` convention. Exact basename
+// misses; the flip resolves it deterministically.
+
+test('fixRefsResolve: date-suffix ref flips to existing date-prefix file → proposal', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: qux-2026-02-02.md')];
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  assert.equal(unfixable.length, 0);
+  assert.equal(proposals.length, 1);
+  const p = proposals[0]!;
+  assert.equal(p.oldText, 'qux-2026-02-02.md'); // the broken ref, replaced verbatim
+  assert.equal(p.newText, 'knowledge/discoveries/2026-02-02-qux.md');
+  assert.match(p.reason, /date-suffix → date-prefix/);
+});
+
+test('fixRefsResolve: date-suffix ref with dir prefix flips, oldText keeps full ref', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: discoveries/qux-2026-02-02.md')];
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0]!.oldText, 'discoveries/qux-2026-02-02.md');
+  assert.equal(proposals[0]!.newText, 'knowledge/discoveries/2026-02-02-qux.md');
+});
+
+test('fixRefsResolve: date-suffix ref whose flip target is absent → dangling, no false proposal', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: nope-2026-09-09.md')];
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  assert.equal(proposals.length, 0);
+  assert.equal(unfixable.length, 1);
+  assert.match(unfixable[0]!.reason, /dangling/);
+});
+
 // --- proposeFixes: dispatch only registered checks -----------------------
 
 test('proposeFixes: ignores issues with no registered fixer (e.g. verify-by-past)', async () => {
