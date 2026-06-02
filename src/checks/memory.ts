@@ -13,11 +13,16 @@
 //   - 1 hot-tier shape: hot-tier-entry-shape (MEMORY.md-only line-length gate
 //     per docs/superpowers/specs/2026-05-17-memory-index-trim-and-gate-design.md §4).
 
-import { access } from 'node:fs/promises';
-import { join, dirname, isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
+import {
+  VERIFY_BY_DATE_SHAPE,
+  checkRefsResolve,
+  checkVerifyByPast,
+  type RefCandidateResolver,
+} from './common.js';
 
 const REQUIRED_FIELDS = ['name', 'description', 'type', 'source', 'verify_by'] as const;
 
@@ -25,9 +30,6 @@ const KNOWN_TYPES = new Set(['user', 'feedback', 'project', 'reference', 'patter
 
 // `source: YYYY-MM-DD <text>` — date prefix + at least one non-whitespace char in the trigger text.
 const SOURCE_SHAPE = /^\d{4}-\d{2}-\d{2}\s+\S/;
-
-// `verify_by: YYYY-MM-DD` (the alternative `stable` is checked separately).
-const VERIFY_BY_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 
 // --- Implemented (Phase 1) ----------------------------------------------
 
@@ -156,82 +158,32 @@ export const memoryVerifyByShape: Check = (ctx) => {
  * `verify_by` past today (if not `stable`).
  * Severity: info.
  * Source: cc-healer V1 spec Tier 2 row "verify_by past today (if not stable)".
- * Note: shape check owns malformed values; this check only fires on well-formed past dates.
- * YYYY-MM-DD lexicographic compare is correct because ISO 8601 sorts as text.
+ * Shared body lives in common.checkVerifyByPast; this wrapper adds the memory-only
+ * exemption: audit_* files are historical logs — a past verify_by is expected
+ * (they archive, they aren't re-verified) per the Rook stale-scan rule.
  */
 export const memoryVerifyByPast: Check = (ctx) => {
-  if (!ctx.parsed.ok) return [];
-  if (Object.keys(ctx.parsed.data).length === 0) return [];
-  // audit_* files are historical logs — a past verify_by is expected (they
-  // archive, they aren't re-verified). Exempt per the Rook stale-scan rule.
   if (ctx.file.startsWith('audit_')) return [];
-  const verifyBy = ctx.parsed.data.verify_by;
-  if (typeof verifyBy !== 'string') return []; // shape check owns
-  if (verifyBy === 'stable') return [];
-  if (!VERIFY_BY_DATE_SHAPE.test(verifyBy)) return []; // shape check owns
-  if (verifyBy < ctx.today) {
-    return [
-      {
-        severity: 'info',
-        check: 'memory-verify-by-past',
-        file: ctx.file,
-        message: `verify_by ${verifyBy} is past today (${ctx.today})`,
-      },
-    ];
-  }
-  return [];
+  return checkVerifyByPast(ctx, 'memory-verify-by-past');
 };
 
 /**
- * Each filename in `supersedes` / `superseded_by` / `related` must resolve —
- * either as a sibling memory file (bare name) OR workspace-relative against
- * devcrowRoot (e.g. `related: [knowledge/research/foo.md]`, `docs/…`). Accepts
- * a single string or an array. Only flags refs that exist at no candidate.
+ * Memory-tier ref resolver: a sibling memory file (bare name) OR a
+ * workspace-relative path (knowledge/…, docs/…) against devcrowRoot. Absolute
+ * refs probe themselves only.
+ */
+const memoryRefCandidates: RefCandidateResolver = (ref, dir, ctx) =>
+  isAbsolute(ref) ? [ref] : [join(dir, ref), join(ctx.devcrowRoot, ref)];
+
+/**
+ * Each filename in `supersedes` / `superseded_by` / `related` must resolve at
+ * some candidate path (see memoryRefCandidates). Accepts a single string or an
+ * array; only flags refs that exist nowhere.
  * Severity: warn.
  * Source: cc-healer V1 spec Tier 2 row "supersedes/superseded_by/related filenames exist".
  */
-export const memoryRefsResolve: Check = async (ctx) => {
-  if (!ctx.parsed.ok) return [];
-  if (Object.keys(ctx.parsed.data).length === 0) return [];
-  const dir = dirname(ctx.filePath);
-  const issues: Issue[] = [];
-  const fields = [
-    { key: 'supersedes', value: ctx.parsed.data.supersedes },
-    { key: 'superseded_by', value: ctx.parsed.data.superseded_by },
-    { key: 'related', value: ctx.parsed.data.related },
-  ];
-  for (const { key, value } of fields) {
-    if (value === undefined) continue;
-    const refs = Array.isArray(value) ? value : [value];
-    for (const ref of refs) {
-      if (typeof ref !== 'string' || ref.length === 0) continue;
-      // Resolve a sibling memory file (bare name) OR a workspace-relative path
-      // (knowledge/…, docs/…) against devcrowRoot. Flag only if it exists nowhere.
-      const candidates = isAbsolute(ref)
-        ? [ref]
-        : [join(dir, ref), join(ctx.devcrowRoot, ref)];
-      let resolved = false;
-      for (const candidate of candidates) {
-        try {
-          await access(candidate);
-          resolved = true;
-          break;
-        } catch {
-          // try next candidate
-        }
-      }
-      if (!resolved) {
-        issues.push({
-          severity: 'warn',
-          check: 'memory-refs-resolve',
-          file: ctx.file,
-          message: `${key} references missing file: ${ref}`,
-        });
-      }
-    }
-  }
-  return issues;
-};
+export const memoryRefsResolve: Check = (ctx) =>
+  checkRefsResolve(ctx, 'memory-refs-resolve', memoryRefCandidates);
 
 // --- Cross-file checks (Phase 1 step 2b) --------------------------------
 //

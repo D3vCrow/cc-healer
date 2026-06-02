@@ -14,8 +14,11 @@ export type { FixProposal, Unfixable, FixResult } from './types.js';
 
 // Registry keyed by check name. Adding a fixer (skill-footer drafting,
 // verify-by refresh, …) is a one-line entry — the orchestrator stays untouched.
+// fixRefsResolve is tier-agnostic (basename search over knowledge/ + docs/), so
+// the same fixer serves both the memory tier and the knowledge tier.
 const FIXERS: Record<string, Fixer> = {
   'memory-refs-resolve': fixRefsResolve,
+  'knowledge-refs-resolve': fixRefsResolve,
 };
 
 export async function proposeFixes(report: CheckReport, opts: FixerOpts): Promise<FixResult> {
