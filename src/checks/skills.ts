@@ -288,6 +288,12 @@ export const verifyByPast: Check = (ctx) => {
 // outside bold), and `**NEVER:**` (colon inside bold). The old `/^\*\*NEVER\*\*/`
 // rejected colon-inside, false-flagging 4 skills that already had the footer.
 const NEVER_BLOCK = /^\*\*NEVER:?\*\*:?/m;
+// Kept strict (case-sensitive, exact title-case) by design — NOT the NEVER bug's twin.
+// Unlike NEVER (3 colon-variants in real use → loosened above), the
+// `### Recommended Next Step` footer is uniform across the whole command corpus.
+// Audited 2026-06-02: 0 false-positives among 10 flags (all genuine misses, = the
+// authoring backlog). Loosening (case-insensitive / wording variants) would weaken a
+// correctly-calibrated check and invite footer drift.
 const NEXT_STEP = /Recommended Next Step/;
 
 /**
