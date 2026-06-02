@@ -26,6 +26,7 @@ Usage:
   cc-healer <path>                  scan a dir of .md files (skill checks)
   cc-healer --tier skills [path]    scan ~/.claude/commands (Tier 1, default)
   cc-healer --tier memory [path]    scan ~/.claude/projects/<cwd-slug>/memory (Tier 2, default)
+  cc-healer --tier <t> --json       emit findings as JSON (machine-readable)
   cc-healer --version               print version
   cc-healer --help                  this message
 
@@ -194,6 +195,7 @@ function printReport(target: string, report: CheckReport): void {
 
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
+  const asJson = args.includes('--json');
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     printHelp();
@@ -247,7 +249,12 @@ async function main(): Promise<number> {
     skipFiles: config.skipFiles,
     buildIndexes: config.buildIndexes,
   });
-  printReport(config.target, report);
+  if (asJson) {
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ target: config.target, ...report }, null, 2));
+  } else {
+    printReport(config.target, report);
+  }
 
   return report.issues.filter((i) => i.severity === 'error').length;
 }
