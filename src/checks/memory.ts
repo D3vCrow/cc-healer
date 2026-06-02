@@ -14,7 +14,7 @@
 //     per docs/superpowers/specs/2026-05-17-memory-index-trim-and-gate-design.md §4).
 
 import { access } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute } from 'node:path';
 
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
@@ -180,9 +180,10 @@ export const memoryVerifyByPast: Check = (ctx) => {
 };
 
 /**
- * Each filename in `supersedes` / `superseded_by` / `related` must exist in the
- * same directory as the memory file. Accepts either a single string or an array
- * of strings for each field.
+ * Each filename in `supersedes` / `superseded_by` / `related` must resolve —
+ * either as a sibling memory file (bare name) OR workspace-relative against
+ * devcrowRoot (e.g. `related: [knowledge/research/foo.md]`, `docs/…`). Accepts
+ * a single string or an array. Only flags refs that exist at no candidate.
  * Severity: warn.
  * Source: cc-healer V1 spec Tier 2 row "supersedes/superseded_by/related filenames exist".
  */
@@ -201,9 +202,22 @@ export const memoryRefsResolve: Check = async (ctx) => {
     const refs = Array.isArray(value) ? value : [value];
     for (const ref of refs) {
       if (typeof ref !== 'string' || ref.length === 0) continue;
-      try {
-        await access(join(dir, ref));
-      } catch {
+      // Resolve a sibling memory file (bare name) OR a workspace-relative path
+      // (knowledge/…, docs/…) against devcrowRoot. Flag only if it exists nowhere.
+      const candidates = isAbsolute(ref)
+        ? [ref]
+        : [join(dir, ref), join(ctx.devcrowRoot, ref)];
+      let resolved = false;
+      for (const candidate of candidates) {
+        try {
+          await access(candidate);
+          resolved = true;
+          break;
+        } catch {
+          // try next candidate
+        }
+      }
+      if (!resolved) {
         issues.push({
           severity: 'warn',
           check: 'memory-refs-resolve',

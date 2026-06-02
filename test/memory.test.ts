@@ -315,6 +315,61 @@ test('memoryRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded)'
   assert.deepEqual(await memoryRefsResolve(ctx), []);
 });
 
+test('memoryRefsResolve: workspace-relative ref (skills/clean.md under devcrowRoot) resolves → 0 issues', async () => {
+  const content = [
+    '---',
+    'name: T',
+    'description: d',
+    'type: project',
+    'source: 2026-04-22 x',
+    'verify_by: 2027-01-01',
+    'related: [skills/clean.md]',
+    '---',
+    'body',
+  ].join('\n');
+  const ctx: CheckContext = {
+    file: 'inline.md',
+    filePath: join(FIXTURES, 'inline.md'),
+    parsed: parseFrontmatter(content),
+    content,
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    devcrowRoot: join(HERE, 'fixtures'),
+  };
+  // skills/clean.md exists under test/fixtures (the skills-tier fixture set),
+  // so a workspace-relative ref must resolve even though it isn't a sibling.
+  assert.deepEqual(await memoryRefsResolve(ctx), []);
+});
+
+test('memoryRefsResolve: workspace-relative ref that exists nowhere → 1 warn', async () => {
+  const content = [
+    '---',
+    'name: T',
+    'description: d',
+    'type: project',
+    'source: 2026-04-22 x',
+    'verify_by: 2027-01-01',
+    'related: [knowledge/research/does-not-exist-xyz.md]',
+    '---',
+    'body',
+  ].join('\n');
+  const ctx: CheckContext = {
+    file: 'inline.md',
+    filePath: join(FIXTURES, 'inline.md'),
+    parsed: parseFrontmatter(content),
+    content,
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    devcrowRoot: join(HERE, 'fixtures'),
+  };
+  const issues = await memoryRefsResolve(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.check, 'memory-refs-resolve');
+  assert.match(issues[0]?.message ?? '', /does-not-exist-xyz/);
+});
+
 // --- memory-index-parity (impl, cross-file) ----------------------------
 
 import type { MemoryIndexes } from '../src/checks/types.ts';
