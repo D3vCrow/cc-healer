@@ -5,10 +5,16 @@ import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
 import { skillChecks, memoryChecks } from './checks/index.js';
 import { buildMemoryIndexes } from './memory-indexes.js';
+import { proposeFixes, applyProposals } from './fix/index.js';
 import type { Check, CheckContext, MemoryIndexes } from './checks/index.js';
 import type { Issue, CheckReport } from './types.js';
+import type { FixResult } from './fix/index.js';
 
 const VERSION = '0.0.1';
+
+// Workspace root: the second resolution candidate for memory refs and the search
+// base for the fix-engine. Single source of truth (was inlined in scanDir).
+const DEVCROW_ROOT = 'F:/DevCrow/Dev';
 
 function expandTilde(p: string): string {
   if (p.startsWith('~')) {
@@ -27,6 +33,8 @@ Usage:
   cc-healer --tier skills [path]    scan ~/.claude/commands (Tier 1, default)
   cc-healer --tier memory [path]    scan ~/.claude/projects/<cwd-slug>/memory (Tier 2, default)
   cc-healer --tier <t> --json       emit findings as JSON (machine-readable)
+  cc-healer --tier memory --fix     propose fixes for resolvable findings (propose-only)
+  cc-healer --tier memory --fix --write   apply the proposed fixes to disk
   cc-healer --version               print version
   cc-healer --help                  this message
 
@@ -88,7 +96,7 @@ async function scanDir(
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const cwd = process.cwd();
-  const devcrowRoot = 'F:/DevCrow/Dev';
+  const devcrowRoot = DEVCROW_ROOT;
   const issues: Issue[] = [];
   let scanned = 0;
   let withFrontmatter = 0;
@@ -193,9 +201,39 @@ function printReport(target: string, report: CheckReport): void {
   }
 }
 
+function printFixReport(result: FixResult, wrote: boolean): void {
+  // eslint-disable-next-line no-console
+  const log = console.log.bind(console);
+  const { proposals, unfixable } = result;
+
+  if (proposals.length > 0) {
+    const head = wrote
+      ? `\n✎ APPLIED (${proposals.length})`
+      : `\n✎ PROPOSALS (${proposals.length}) — propose-only; re-run with --write to apply`;
+    log(head);
+    for (const p of proposals) {
+      log(`  ${p.file}  [${p.field}]`);
+      log(`    - ${p.oldText}`);
+      log(`    + ${p.newText}`);
+    }
+  }
+  if (unfixable.length > 0) {
+    log(`\n● NEEDS HUMAN (${unfixable.length}) — cannot auto-resolve`);
+    for (const u of unfixable) {
+      log(`  ${pad(u.file, 40)} ${u.detail}`);
+      log(`    ↳ ${u.reason}`);
+    }
+  }
+  if (proposals.length === 0 && unfixable.length === 0) {
+    log(`\n✓ no fixable findings (nothing to propose)`);
+  }
+}
+
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const asJson = args.includes('--json');
+  const doFix = args.includes('--fix');
+  const doWrite = args.includes('--write');
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     printHelp();
@@ -249,6 +287,24 @@ async function main(): Promise<number> {
     skipFiles: config.skipFiles,
     buildIndexes: config.buildIndexes,
   });
+
+  // --fix: turn findings into reviewable proposals. Propose-only unless --write
+  // is also passed (autonomy 1a — memory content stays human-approved). Exits 0;
+  // it is a report, not a gate.
+  if (doFix) {
+    const result = await proposeFixes(report, { target: config.target, devcrowRoot: DEVCROW_ROOT });
+    if (doWrite && result.proposals.length > 0) {
+      await applyProposals(result.proposals);
+    }
+    if (asJson) {
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify({ target: config.target, wrote: doWrite, ...result }, null, 2));
+    } else {
+      printFixReport(result, doWrite);
+    }
+    return 0;
+  }
+
   if (asJson) {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ target: config.target, ...report }, null, 2));
