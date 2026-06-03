@@ -5,9 +5,10 @@ import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
 import { skillChecks, memoryChecks, knowledgeChecks } from './checks/index.js';
 import { scanSettings } from './checks/settings.js';
+import { pluginChecks, buildPluginIndex } from './checks/plugins.js';
 import { buildMemoryIndexes } from './memory-indexes.js';
 import { proposeFixes, applyProposals } from './fix/index.js';
-import type { Check, CheckContext, MemoryIndexes } from './checks/index.js';
+import type { Check, CheckContext, MemoryIndexes, PluginIndex } from './checks/index.js';
 import type { Issue, CheckReport } from './types.js';
 import type { FixResult } from './fix/index.js';
 
@@ -35,6 +36,7 @@ Usage:
   cc-healer --tier memory [path]    scan ~/.claude/projects/<cwd-slug>/memory (Tier 2, default)
   cc-healer --tier knowledge [path] scan <workspace>/knowledge recursively (KB tier, default)
   cc-healer --tier settings [path]  scan ~/.claude/settings.json (Tier 3, default)
+  cc-healer --tier plugins [path]   scan ~/.claude/plugins recursively (Tier 4, default)
   cc-healer --tier <t> --json       emit findings as JSON (machine-readable)
   cc-healer --tier memory --fix     propose fixes for resolvable findings (propose-only)
   cc-healer --tier memory --fix --write   apply the proposed fixes to disk
@@ -46,7 +48,7 @@ Tiers (per docs/cc-healer-v1-spec.md):
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (9 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (2 checks live)
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)
-  plugins   — Tier 4, plugin install registry (not yet)
+  plugins   — Tier 4, ~/.claude/plugins recursive (4 checks live)
 
 Memory tier default path is derived from process.cwd() (Windows: F:\\X\\Y → F--X-Y).
 Run from project root for the default to resolve, or pass an explicit path.`);
@@ -58,7 +60,9 @@ type TierConfig = {
   skipFiles?: ReadonlySet<string>;
   skipDirs?: ReadonlySet<string>;       // basenames to not descend into (recursive scans)
   recursive?: boolean;                  // walk sub-directories (default: flat, like memory/skills)
+  extraFiles?: ReadonlySet<string>;     // non-.md basenames to also collect (plugins: installed_plugins.json)
   buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+  buildPluginIndex?: (target: string) => Promise<PluginIndex>;
   // Single-file tiers (settings) supply their own scan instead of the generic
   // .md-directory scanDir walk. When present, main() calls this and ignores `checks`.
   scan?: (target: string) => Promise<CheckReport>;
@@ -103,7 +107,17 @@ function resolveTier(tier: string): TierConfig | null {
         scan: scanSettings,
       };
     case 'plugins':
-      return null; // recognized but not yet implemented
+      return {
+        target: expandTilde('~/.claude/plugins'),
+        checks: pluginChecks,
+        recursive: true,
+        // marketplaces/ holds catalog clones (~as many .md as cache/) for plugins that
+        // aren't installed — out of "install integrity" scope; cache/ is the installed set.
+        skipDirs: new Set(['marketplaces']),
+        // installed_plugins.json isn't .md but plugin-install-registry-consistent must see it.
+        extraFiles: new Set(['installed_plugins.json']),
+        buildPluginIndex,
+      };
     default:
       return null;
   }
@@ -118,7 +132,12 @@ function resolveTier(tier: string): TierConfig | null {
 // symlink-following isFile() semantics the flat scan relied on.
 async function collectMarkdownFiles(
   target: string,
-  opts: { recursive?: boolean; skipFiles?: ReadonlySet<string>; skipDirs?: ReadonlySet<string> },
+  opts: {
+    recursive?: boolean;
+    skipFiles?: ReadonlySet<string>;
+    skipDirs?: ReadonlySet<string>;
+    extraFiles?: ReadonlySet<string>; // non-.md basenames to also collect (e.g. installed_plugins.json)
+  },
 ): Promise<{ name: string; fullPath: string; relPath: string }[]> {
   const out: { name: string; fullPath: string; relPath: string }[] = [];
 
@@ -132,7 +151,7 @@ async function collectMarkdownFiles(
     for (const name of names) {
       const fullPath = join(dir, name);
       const relPath = prefix ? `${prefix}/${name}` : name;
-      if (name.endsWith('.md')) {
+      if (name.endsWith('.md') || opts.extraFiles?.has(name)) {
         if (opts.skipFiles?.has(name)) continue;
         let s;
         try {
@@ -167,7 +186,9 @@ async function scanDir(
     skipFiles?: ReadonlySet<string>;
     skipDirs?: ReadonlySet<string>;
     recursive?: boolean;
+    extraFiles?: ReadonlySet<string>;
     buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+    buildPluginIndex?: (target: string) => Promise<PluginIndex>;
   },
 ): Promise<CheckReport> {
   const start = Date.now();
@@ -183,11 +204,14 @@ async function scanDir(
     recursive: opts.recursive,
     skipFiles: opts.skipFiles,
     skipDirs: opts.skipDirs,
+    extraFiles: opts.extraFiles,
   });
 
-  // Build cross-file indexes once per scan, before per-file checks. No-op for
-  // tiers (skills, knowledge, settings) that don't supply a buildIndexes function.
+  // Build cross-file indexes once per scan, before per-file checks. Each no-ops for
+  // tiers that don't supply the matching builder: memory → indexes, plugins →
+  // pluginIndex; skills / knowledge / settings supply neither.
   const indexes = opts.buildIndexes ? await opts.buildIndexes(target) : undefined;
+  const pluginIndex = opts.buildPluginIndex ? await opts.buildPluginIndex(target) : undefined;
 
   for (const { fullPath, relPath } of files) {
     scanned++;
@@ -216,6 +240,7 @@ async function scanDir(
       cwd,
       devcrowRoot,
       indexes,
+      pluginIndex,
     };
 
     if (!result.ok) {
@@ -356,7 +381,9 @@ async function main(): Promise<number> {
         skipFiles: config.skipFiles,
         skipDirs: config.skipDirs,
         recursive: config.recursive,
+        extraFiles: config.extraFiles,
         buildIndexes: config.buildIndexes,
+        buildPluginIndex: config.buildPluginIndex,
       });
 
   // --fix: turn findings into reviewable proposals. Propose-only unless --write

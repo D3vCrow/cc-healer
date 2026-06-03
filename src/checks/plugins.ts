@@ -24,7 +24,7 @@ import { access, lstat, readFile, readlink, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, basename } from 'node:path';
 
 import type { Issue } from '../types.js';
-import type { Check, CheckContext } from './types.js';
+import type { Check, CheckContext, PluginIndex } from './types.js';
 
 const SKILL_REQUIRED_FIELDS = ['description'] as const;
 
@@ -41,6 +41,40 @@ interface InstalledPluginRecord {
 interface InstalledPluginsRegistry {
   version?: unknown;
   plugins?: Record<string, unknown>;
+}
+
+// --- Index builder ------------------------------------------------------
+
+/**
+ * Build the plugin-tier cross-file index from `<target>/installed_plugins.json`.
+ * installedIds = the registry's `plugins` object keys (each a `<plugin>@<marketplace>`
+ * id, e.g. `watch@claude-video`). Consumed by plugin-skill-refs-exist via
+ * CheckContext.pluginIndex.
+ *
+ * A missing registry → empty set (consumer self-guards on absence). A malformed
+ * registry → empty set too; plugin-install-registry-consistent owns reporting the
+ * parse error, so the index stays silent rather than double-reporting.
+ *
+ * Mirrors buildMemoryIndexes (src/memory-indexes.ts): one pre-pass per scan, before
+ * per-file checks run.
+ */
+export async function buildPluginIndex(target: string): Promise<PluginIndex> {
+  const installedIds = new Set<string>();
+  let content: string;
+  try {
+    content = await readFile(join(target, 'installed_plugins.json'), 'utf-8');
+  } catch {
+    return { installedIds };
+  }
+  try {
+    const parsed = JSON.parse(content) as InstalledPluginsRegistry;
+    if (parsed && typeof parsed.plugins === 'object' && parsed.plugins !== null) {
+      for (const id of Object.keys(parsed.plugins)) installedIds.add(id);
+    }
+  } catch {
+    // malformed → empty set; plugin-install-registry-consistent reports the parse error
+  }
+  return { installedIds };
 }
 
 // --- Check 1: plugin-install-registry-consistent ------------------------

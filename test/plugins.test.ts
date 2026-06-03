@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFile, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import {
   pluginScheduleSkillRefsExist,
   pluginSymlinksResolve,
   pluginChecks,
+  buildPluginIndex,
 } from '../src/checks/plugins.ts';
 import type { CheckContext, PluginIndex } from '../src/checks/types.ts';
 
@@ -316,6 +317,49 @@ test('pluginSymlinksResolve: symlink to empty file → 1 error', async (t) => {
     assert.match(issues[0]?.message ?? '', /empty|0 bytes/i);
   } finally {
     await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+// --- buildPluginIndex ---------------------------------------------------
+
+test('buildPluginIndex: reads installed_plugins.json → installedIds = plugins object keys', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-healer-plugidx-'));
+  try {
+    const registry = {
+      version: 2,
+      plugins: {
+        'watch@claude-video': [{ scope: 'user', installPath: 'x' }],
+        'superpowers@claude-plugins-official': [{ scope: 'user', installPath: 'y' }],
+      },
+    };
+    await writeFile(join(dir, 'installed_plugins.json'), JSON.stringify(registry), 'utf-8');
+    const idx = await buildPluginIndex(dir);
+    assert.equal(idx.installedIds.size, 2);
+    assert.ok(idx.installedIds.has('watch@claude-video'));
+    assert.ok(idx.installedIds.has('superpowers@claude-plugins-official'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('buildPluginIndex: missing registry → empty set', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-healer-plugidx-'));
+  try {
+    const idx = await buildPluginIndex(dir); // no installed_plugins.json written
+    assert.equal(idx.installedIds.size, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('buildPluginIndex: malformed registry → empty set (registry-consistent owns the parse error)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-healer-plugidx-'));
+  try {
+    await writeFile(join(dir, 'installed_plugins.json'), '{ not json ', 'utf-8');
+    const idx = await buildPluginIndex(dir);
+    assert.equal(idx.installedIds.size, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
