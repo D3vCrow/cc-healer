@@ -4,6 +4,7 @@ import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
 import { skillChecks, memoryChecks, knowledgeChecks } from './checks/index.js';
+import { scanSettings } from './checks/settings.js';
 import { buildMemoryIndexes } from './memory-indexes.js';
 import { proposeFixes, applyProposals } from './fix/index.js';
 import type { Check, CheckContext, MemoryIndexes } from './checks/index.js';
@@ -33,6 +34,7 @@ Usage:
   cc-healer --tier skills [path]    scan ~/.claude/commands (Tier 1, default)
   cc-healer --tier memory [path]    scan ~/.claude/projects/<cwd-slug>/memory (Tier 2, default)
   cc-healer --tier knowledge [path] scan <workspace>/knowledge recursively (KB tier, default)
+  cc-healer --tier settings [path]  scan ~/.claude/settings.json (Tier 3, default)
   cc-healer --tier <t> --json       emit findings as JSON (machine-readable)
   cc-healer --tier memory --fix     propose fixes for resolvable findings (propose-only)
   cc-healer --tier memory --fix --write   apply the proposed fixes to disk
@@ -43,7 +45,7 @@ Tiers (per docs/cc-healer-v1-spec.md):
   skills    — Tier 1, ~/.claude/commands (9 checks live)
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (9 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (2 checks live)
-  settings  — Tier 3, ~/.claude/settings.json (not yet)
+  settings  — Tier 3, ~/.claude/settings.json (5 checks live)
   plugins   — Tier 4, plugin install registry (not yet)
 
 Memory tier default path is derived from process.cwd() (Windows: F:\\X\\Y → F--X-Y).
@@ -57,6 +59,9 @@ type TierConfig = {
   skipDirs?: ReadonlySet<string>;       // basenames to not descend into (recursive scans)
   recursive?: boolean;                  // walk sub-directories (default: flat, like memory/skills)
   buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+  // Single-file tiers (settings) supply their own scan instead of the generic
+  // .md-directory scanDir walk. When present, main() calls this and ignores `checks`.
+  scan?: (target: string) => Promise<CheckReport>;
 };
 
 function cwdToProjectSlug(cwd: string): string {
@@ -92,6 +97,11 @@ function resolveTier(tier: string): TierConfig | null {
         skipFiles: new Set(['_TEMPLATE.md']),
       };
     case 'settings':
+      return {
+        target: expandTilde('~/.claude/settings.json'),
+        checks: [], // unused — single-file tier runs via scan, not scanDir
+        scan: scanSettings,
+      };
     case 'plugins':
       return null; // recognized but not yet implemented
     default:
@@ -229,7 +239,7 @@ function pad(s: string, n: number): string {
 function printReport(target: string, report: CheckReport): void {
   // eslint-disable-next-line no-console
   const log = console.log.bind(console);
-  log(`\ncc-healer V0 smoke — scanned ${report.scanned} .md files in ${target} · ${report.durationMs}ms`);
+  log(`\ncc-healer V0 smoke — scanned ${report.scanned} file(s) in ${target} · ${report.durationMs}ms`);
   log(`  with-frontmatter: ${report.withFrontmatter}`);
   log(`  parse-failures:   ${report.parseFailures}`);
 
@@ -253,7 +263,7 @@ function printReport(target: string, report: CheckReport): void {
     log(`\n✓ CLEAN (no issues detected by V0 checks)`);
   }
   if (report.scanned === 0) {
-    log(`\n(no .md files found at ${target})`);
+    log(`\n(no files found at ${target})`);
   }
 }
 
@@ -338,13 +348,16 @@ async function main(): Promise<number> {
     config = { target: expandTilde(positional), checks: skillChecks };
   }
 
-  const report = await scanDir(config.target, {
-    checks: config.checks,
-    skipFiles: config.skipFiles,
-    skipDirs: config.skipDirs,
-    recursive: config.recursive,
-    buildIndexes: config.buildIndexes,
-  });
+  // Single-file tiers (settings) bring their own scan; the rest walk a .md dir.
+  const report = config.scan
+    ? await config.scan(config.target)
+    : await scanDir(config.target, {
+        checks: config.checks,
+        skipFiles: config.skipFiles,
+        skipDirs: config.skipDirs,
+        recursive: config.recursive,
+        buildIndexes: config.buildIndexes,
+      });
 
   // --fix: turn findings into reviewable proposals. Propose-only unless --write
   // is also passed (autonomy 1a — memory content stays human-approved). Exits 0;
