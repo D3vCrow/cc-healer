@@ -350,7 +350,19 @@ async function main(): Promise<number> {
   // is also passed (autonomy 1a — memory content stays human-approved). Exits 0;
   // it is a report, not a gate.
   if (doFix) {
-    const result = await proposeFixes(report, { target: config.target, devcrowRoot: DEVCROW_ROOT });
+    // Cross-tier ref resolution (KB doc → Rook memory file) is a knowledge-tier
+    // concern only; derive the DevCrow memory dir from DEVCROW_ROOT's project slug
+    // (same naming as the memory tier). Other tiers pass undefined → no cross-tier
+    // step, so their fixer behaviour stays byte-identical.
+    const memoryDir =
+      tierName === 'knowledge'
+        ? expandTilde(`~/.claude/projects/${cwdToProjectSlug(DEVCROW_ROOT)}/memory`)
+        : undefined;
+    const result = await proposeFixes(report, {
+      target: config.target,
+      devcrowRoot: DEVCROW_ROOT,
+      memoryDir,
+    });
     if (doWrite && result.proposals.length > 0) {
       await applyProposals(result.proposals);
     }

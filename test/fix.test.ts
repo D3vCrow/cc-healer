@@ -104,6 +104,49 @@ test('fixRefsResolve: date-suffix ref whose flip target is absent → dangling, 
   assert.match(unfixable[0]!.reason, /dangling/);
 });
 
+// --- fixRefsResolve: cross-tier memory ref fallback ----------------------
+// A KB doc references a Rook memory file via a broken `../../../…/memory/x.md`
+// relative path. With memoryDir set, the basename resolves there and the fixer
+// proposes the BARE memory name (the form knowledgeRefCandidates resolves).
+
+const MEM_DIR = join(HERE, 'fixtures', 'fix', 'memory');
+const CROSS_REF = '../../../Users/me/.claude/projects/X/memory/feedback_sample_rule.md';
+
+test('fixRefsResolve: cross-tier memory ref (broken rel path) → proposal with bare memory name', async () => {
+  const issues = [refIssue('mem.md', `related references missing file: ${CROSS_REF}`)];
+  const { proposals, unfixable } = await fixRefsResolve(issues, {
+    target: TARGET,
+    devcrowRoot: FIX_ROOT,
+    memoryDir: MEM_DIR,
+  });
+  assert.equal(unfixable.length, 0);
+  assert.equal(proposals.length, 1);
+  const p = proposals[0]!;
+  assert.equal(p.oldText, CROSS_REF); // the full broken ref, replaced verbatim
+  assert.equal(p.newText, 'feedback_sample_rule.md'); // bare name — resolver finds it in the memory dir
+  assert.match(p.reason, /cross-tier memory/);
+});
+
+test('fixRefsResolve: cross-tier resolution is opt-gated — no memoryDir → dangling (behaviour unchanged)', async () => {
+  const issues = [refIssue('mem.md', `related references missing file: ${CROSS_REF}`)];
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  assert.equal(proposals.length, 0);
+  assert.equal(unfixable.length, 1);
+  assert.match(unfixable[0]!.reason, /dangling/);
+});
+
+test('fixRefsResolve: cross-tier basename absent from memory dir → dangling, no false proposal', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: feedback_nonexistent_rule.md')];
+  const { proposals, unfixable } = await fixRefsResolve(issues, {
+    target: TARGET,
+    devcrowRoot: FIX_ROOT,
+    memoryDir: MEM_DIR,
+  });
+  assert.equal(proposals.length, 0);
+  assert.equal(unfixable.length, 1);
+  assert.match(unfixable[0]!.reason, /dangling/);
+});
+
 // --- proposeFixes: dispatch only registered checks -----------------------
 
 test('proposeFixes: ignores issues with no registered fixer (e.g. verify-by-past)', async () => {

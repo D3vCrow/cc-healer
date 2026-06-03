@@ -6,14 +6,17 @@
 //   1. bare date-ref  `2026-04-25-foo.md`            → lives in knowledge/<sub>/  → PROPOSE prefix
 //   2. partial path   `discoveries/2026-04-17-x.md`  → missing knowledge/ prefix  → PROPOSE prefix
 //   3. date-suffix    `cache-burn-spike-2026-05-24.md` → real file is date-PREFIX → PROPOSE flip
-//   4. dangling ref   `feedback_evidence_over_agreement.md` (no such file)         → NEEDS-HUMAN
+//   4. cross-tier     `../../../…/memory/feedback_x.md` (broken rel path)         → PROPOSE bare memory name
+//   5. dangling ref   `feedback_evidence_over_agreement.md` (no such file)         → NEEDS-HUMAN
 //
 // Resolution searches knowledge/ + docs/ for the ref's basename. A unique hit
 // becomes a textual replacement to the workspace-relative path (forward slashes)
 // — exactly the form `memoryRefsResolve` accepts (join(devcrowRoot, ref) exists).
-// When the ref does not resolve as written, one deterministic fallback is tried:
-// a date-SUFFIX basename (`<stem>-<date>.md`) is re-searched as date-PREFIX
-// (`<date>-<stem>.md`), the workspace's actual convention. Zero hits = dangling
+// Two deterministic fallbacks fire only when the ref does not resolve as written:
+// (a) a date-SUFFIX basename (`<stem>-<date>.md`) re-searched as date-PREFIX
+// (`<date>-<stem>.md`), the workspace convention; (b) the basename under the Rook
+// memory dir (when opts.memoryDir is set), proposed as a BARE memory name — the
+// cross-tier form knowledgeRefCandidates resolves. Zero hits = dangling
 // (create/rename/remove). Multiple = ambiguous. Both left for a human, not guessed.
 
 import { readdir } from 'node:fs/promises';
@@ -57,7 +60,7 @@ function flipDateSuffix(base: string): string | null {
   return m ? `${m[2]}-${m[1]}.md` : null;
 }
 
-export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot }) => {
+export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memoryDir }) => {
   const proposals: FixProposal[] = [];
   const unfixable: Unfixable[] = [];
   // Only these subtrees hold legitimate ref targets; searching the whole repo
@@ -77,34 +80,53 @@ export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot }) => 
     }
     const field = m[1]!;
     const ref = m[2]!;
-    // Try the ref's basename as written; if nothing resolves, retry once with the
-    // date flipped to the front (the workspace convention). `flipped` marks the
-    // fallback so the proposal reason can explain the basename change.
+    // Resolution chain — each step runs only if the prior found nothing:
+    //   ws     basename as written, under knowledge/ + docs/          → workspace-relative
+    //   flip   date flipped to front (`foo-<date>` → `<date>-foo`)    → workspace-relative
+    //   memory basename under the Rook memory dir (cross-tier ref)    → BARE memory name
+    // `mode` records which fired so the proposal renders the right path form + reason.
     let matches = await findByBasename(searchRoots, basename(ref));
-    let flipped = false;
+    let mode: 'ws' | 'flip' | 'memory' = 'ws';
     if (matches.length === 0) {
       const alt = flipDateSuffix(basename(ref));
       if (alt) {
         const altMatches = await findByBasename(searchRoots, alt);
         if (altMatches.length > 0) {
           matches = altMatches;
-          flipped = true;
+          mode = 'flip';
         }
+      }
+    }
+    if (matches.length === 0 && memoryDir) {
+      const memMatches = await findByBasename([memoryDir], basename(ref));
+      if (memMatches.length > 0) {
+        matches = memMatches;
+        mode = 'memory';
       }
     }
 
     if (matches.length === 1) {
-      const rel = relative(devcrowRoot, matches[0]!).replace(/\\/g, '/');
+      // Memory files live outside devcrowRoot, so a workspace-relative path can't
+      // express them; knowledgeRefCandidates resolves a bare memory basename, so
+      // that is the form proposed for a cross-tier hit.
+      const newText =
+        mode === 'memory'
+          ? basename(matches[0]!)
+          : relative(devcrowRoot, matches[0]!).replace(/\\/g, '/');
+      const reason =
+        mode === 'memory'
+          ? `resolve ${field} ref (cross-tier memory) → ${newText}`
+          : mode === 'flip'
+            ? `resolve ${field} ref (date-suffix → date-prefix) → ${newText}`
+            : `resolve ${field} ref → ${newText}`;
       proposals.push({
         file: issue.file,
         filePath: join(target, issue.file),
         check: issue.check,
         field,
         oldText: ref,
-        newText: rel,
-        reason: flipped
-          ? `resolve ${field} ref (date-suffix → date-prefix) → ${rel}`
-          : `resolve ${field} ref → ${rel}`,
+        newText,
+        reason,
       });
     } else if (matches.length === 0) {
       unfixable.push({

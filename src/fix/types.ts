@@ -39,6 +39,10 @@ export interface FixResult {
 export interface FixerOpts {
   target: string; // the scanned dir (memory dir) — abs
   devcrowRoot: string; // workspace root, search base for resolution
+  // Rook memory dir — fallback search root for cross-tier refs (a KB doc pointing
+  // at a memory file). A hit here proposes a BARE memory name. Optional: when
+  // omitted (non-knowledge tiers, most unit tests) no cross-tier resolution runs.
+  memoryDir?: string;
 }
 
 /**
