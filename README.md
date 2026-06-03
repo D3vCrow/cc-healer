@@ -2,7 +2,7 @@
 
 > Claude Code workspace health-check CLI — lints skills, memory files, hooks, and settings.
 
-**Status:** V0 — Phase 0 scaffolding only. Not yet functional. Implementation gated on the 2026-05-10 Claude Code commands graduation per the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` (workspace-internal).
+**Status:** Functional. All five deterministic tiers are live — skills, memory, knowledge, settings, plugins — plus a propose-only `--fix` engine for the memory + knowledge tiers. Built on the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` (workspace-internal).
 
 ## Why
 
@@ -47,6 +47,7 @@ src/
 ├── checks/
 │   ├── skills.ts           # Tier 1 — skill frontmatter
 │   ├── memory.ts           # Tier 2 — Rook v2 frontmatter + index parity
+│   ├── knowledge.ts        # KB tier — knowledge/ verify-by + ref resolution
 │   ├── settings.ts         # Tier 3 — settings.json + hooks
 │   └── plugins.ts          # Tier 4 — install integrity
 └── output/
