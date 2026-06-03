@@ -14,9 +14,26 @@ import type { FixResult } from './fix/index.js';
 
 const VERSION = '0.0.1';
 
-// Workspace root: the second resolution candidate for memory refs and the search
-// base for the fix-engine. Single source of truth (was inlined in scanDir).
-const DEVCROW_ROOT = 'F:/DevCrow/Dev';
+// Workspace root resolution: explicit `--workspace <dir>` › `CC_HEALER_WORKSPACE`
+// env › `process.cwd()`. The root is the second resolution candidate for memory/
+// knowledge refs and the search base for the fix-engine (was the hardcoded literal
+// `F:/DevCrow/Dev`). Normalized to forward slashes so a cwd-derived root on Windows
+// (`F:\X\Y`) is byte-identical to the old literal when run from the workspace root —
+// keeping project-slug derivation (cwdToProjectSlug) and ref display stable.
+function resolveWorkspaceRoot(args: string[]): string {
+  const wsIdx = args.indexOf('--workspace');
+  const fromFlag = wsIdx !== -1 ? args[wsIdx + 1] : undefined;
+  const raw = fromFlag ?? process.env.CC_HEALER_WORKSPACE ?? process.cwd();
+  return expandTilde(raw).replace(/\\/g, '/');
+}
+
+// Remove `--flag <value>` (the flag plus its following token) from an args list.
+// Used to drop `--workspace <dir>` before positional-path detection — its value is
+// not dash-prefixed and would otherwise be picked up as the scan target.
+function stripFlagWithValue(args: string[], flag: string): string[] {
+  const idx = args.indexOf(flag);
+  return idx === -1 ? args : [...args.slice(0, idx), ...args.slice(idx + 2)];
+}
 
 function expandTilde(p: string): string {
   if (p.startsWith('~')) {
@@ -40,6 +57,7 @@ Usage:
   cc-healer --tier <t> --json       emit findings as JSON (machine-readable)
   cc-healer --tier memory --fix     propose fixes for resolvable findings (propose-only)
   cc-healer --tier memory --fix --write   apply the proposed fixes to disk
+  cc-healer --workspace <dir> ...   set workspace root for knowledge/cross-ref resolution
   cc-healer --version               print version
   cc-healer --help                  this message
 
@@ -50,8 +68,10 @@ Tiers (per docs/cc-healer-v1-spec.md):
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)
   plugins   — Tier 4, ~/.claude/plugins recursive (4 checks live)
 
+Workspace root (knowledge tier target + cross-tier ref base) resolves as:
+  --workspace <dir>  ›  CC_HEALER_WORKSPACE env  ›  process.cwd()
 Memory tier default path is derived from process.cwd() (Windows: F:\\X\\Y → F--X-Y).
-Run from project root for the default to resolve, or pass an explicit path.`);
+Run from project root for the defaults to resolve, or pass an explicit path/--workspace.`);
 }
 
 type TierConfig = {
@@ -74,7 +94,7 @@ function cwdToProjectSlug(cwd: string): string {
   return cwd.replace(/^([A-Za-z]):/, '$1-').replace(/[\\/]/g, '-');
 }
 
-function resolveTier(tier: string): TierConfig | null {
+function resolveTier(tier: string, workspaceRoot: string): TierConfig | null {
   switch (tier) {
     case 'skills':
       return {
@@ -92,7 +112,7 @@ function resolveTier(tier: string): TierConfig | null {
       };
     case 'knowledge':
       return {
-        target: join(DEVCROW_ROOT, 'knowledge'),
+        target: join(workspaceRoot, 'knowledge'),
         checks: knowledgeChecks,
         recursive: true,
         // raw/ holds immutable user-curated source artifacts (never re-verified);
@@ -183,6 +203,7 @@ async function scanDir(
   target: string,
   opts: {
     checks: ReadonlyArray<Check>;
+    devcrowRoot: string;                  // workspace root threaded into CheckContext
     skipFiles?: ReadonlySet<string>;
     skipDirs?: ReadonlySet<string>;
     recursive?: boolean;
@@ -194,7 +215,7 @@ async function scanDir(
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const cwd = process.cwd();
-  const devcrowRoot = DEVCROW_ROOT;
+  const devcrowRoot = opts.devcrowRoot;
   const issues: Issue[] = [];
   let scanned = 0;
   let withFrontmatter = 0;
@@ -321,7 +342,10 @@ function printFixReport(result: FixResult, wrote: boolean): void {
 }
 
 async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const workspaceRoot = resolveWorkspaceRoot(rawArgs);
+  // Drop `--workspace <dir>` so it isn't mistaken for the positional scan target.
+  const args = stripFlagWithValue(rawArgs, '--workspace');
   const asJson = args.includes('--json');
   const doFix = args.includes('--fix');
   const doWrite = args.includes('--write');
@@ -354,7 +378,7 @@ async function main(): Promise<number> {
 
   let config: TierConfig;
   if (tierName !== null) {
-    const resolved = resolveTier(tierName);
+    const resolved = resolveTier(tierName, workspaceRoot);
     if (resolved === null) {
       const known = ['skills', 'memory', 'knowledge', 'settings', 'plugins'];
       if (known.includes(tierName)) {
@@ -378,6 +402,7 @@ async function main(): Promise<number> {
     ? await config.scan(config.target)
     : await scanDir(config.target, {
         checks: config.checks,
+        devcrowRoot: workspaceRoot,
         skipFiles: config.skipFiles,
         skipDirs: config.skipDirs,
         recursive: config.recursive,
@@ -391,16 +416,16 @@ async function main(): Promise<number> {
   // it is a report, not a gate.
   if (doFix) {
     // Cross-tier ref resolution (KB doc → Rook memory file) is a knowledge-tier
-    // concern only; derive the DevCrow memory dir from DEVCROW_ROOT's project slug
+    // concern only; derive the memory dir from the workspace root's project slug
     // (same naming as the memory tier). Other tiers pass undefined → no cross-tier
     // step, so their fixer behaviour stays byte-identical.
     const memoryDir =
       tierName === 'knowledge'
-        ? expandTilde(`~/.claude/projects/${cwdToProjectSlug(DEVCROW_ROOT)}/memory`)
+        ? expandTilde(`~/.claude/projects/${cwdToProjectSlug(workspaceRoot)}/memory`)
         : undefined;
     const result = await proposeFixes(report, {
       target: config.target,
-      devcrowRoot: DEVCROW_ROOT,
+      devcrowRoot: workspaceRoot,
       memoryDir,
     });
     if (doWrite && result.proposals.length > 0) {
