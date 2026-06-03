@@ -12,12 +12,13 @@
 // Resolution searches knowledge/ + docs/ for the ref's basename. A unique hit
 // becomes a textual replacement to the workspace-relative path (forward slashes)
 // — exactly the form `memoryRefsResolve` accepts (join(devcrowRoot, ref) exists).
-// Two deterministic fallbacks fire only when the ref does not resolve as written:
+// Three deterministic fallbacks fire only when the ref does not resolve as written:
 // (a) a date-SUFFIX basename (`<stem>-<date>.md`) re-searched as date-PREFIX
 // (`<date>-<stem>.md`), the workspace convention; (b) the basename under the Rook
 // memory dir (when opts.memoryDir is set), proposed as a BARE memory name — the
-// cross-tier form knowledgeRefCandidates resolves. Zero hits = dangling
-// (create/rename/remove). Multiple = ambiguous. Both left for a human, not guessed.
+// cross-tier form knowledgeRefCandidates resolves; (c) a basename written without
+// the `.md` extension retried with `.md` appended (against both roots). Zero hits =
+// dangling (create/rename/remove). Multiple = ambiguous. Both left for a human.
 
 import { readdir } from 'node:fs/promises';
 import { join, basename, relative } from 'node:path';
@@ -84,6 +85,7 @@ export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memor
     //   ws     basename as written, under knowledge/ + docs/          → workspace-relative
     //   flip   date flipped to front (`foo-<date>` → `<date>-foo`)    → workspace-relative
     //   memory basename under the Rook memory dir (cross-tier ref)    → BARE memory name
+    //   +.md   no-extension basename retried with `.md` (ws or memory) → as the step that hit
     // `mode` records which fired so the proposal renders the right path form + reason.
     let matches = await findByBasename(searchRoots, basename(ref));
     let mode: 'ws' | 'flip' | 'memory' = 'ws';
@@ -102,6 +104,21 @@ export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memor
       if (memMatches.length > 0) {
         matches = memMatches;
         mode = 'memory';
+      }
+    }
+    if (matches.length === 0 && !basename(ref).endsWith('.md')) {
+      // Ref written without the `.md` extension — retry with it appended, against
+      // knowledge/ + docs/ first (workspace-relative), then the memory dir (bare).
+      const withMd = `${basename(ref)}.md`;
+      matches = await findByBasename(searchRoots, withMd);
+      if (matches.length > 0) {
+        mode = 'ws';
+      } else if (memoryDir) {
+        const memMatches = await findByBasename([memoryDir], withMd);
+        if (memMatches.length > 0) {
+          matches = memMatches;
+          mode = 'memory';
+        }
       }
     }
 

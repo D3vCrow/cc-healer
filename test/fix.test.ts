@@ -147,6 +147,35 @@ test('fixRefsResolve: cross-tier basename absent from memory dir → dangling, n
   assert.match(unfixable[0]!.reason, /dangling/);
 });
 
+// --- fixRefsResolve: missing-.md-extension fallback ----------------------
+// A ref written without `.md` (e.g. `2026-04-20-foo`). Retried with `.md`
+// appended — against knowledge/ + docs/ (workspace-relative) then memory (bare).
+
+test('fixRefsResolve: no-extension ref → .md appended, resolves under knowledge/', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: 2026-01-01-foo')];
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  assert.equal(unfixable.length, 0);
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0]!.oldText, '2026-01-01-foo'); // bare ref replaced verbatim
+  assert.equal(proposals[0]!.newText, 'knowledge/research/2026-01-01-foo.md');
+});
+
+test('fixRefsResolve: no-extension ref → .md appended, resolves in memory dir as bare name', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: feedback_sample_rule')];
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT, memoryDir: MEM_DIR });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0]!.oldText, 'feedback_sample_rule');
+  assert.equal(proposals[0]!.newText, 'feedback_sample_rule.md');
+});
+
+test('fixRefsResolve: no-extension ref with no target even after .md → dangling', async () => {
+  const issues = [refIssue('mem.md', 'related references missing file: 2026-09-09-nope-no-ext')];
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT, memoryDir: MEM_DIR });
+  assert.equal(proposals.length, 0);
+  assert.equal(unfixable.length, 1);
+  assert.match(unfixable[0]!.reason, /dangling/);
+});
+
 // --- proposeFixes: dispatch only registered checks -----------------------
 
 test('proposeFixes: ignores issues with no registered fixer (e.g. verify-by-past)', async () => {
