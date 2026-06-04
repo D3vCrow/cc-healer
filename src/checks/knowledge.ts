@@ -36,7 +36,7 @@ function expandTilde(p: string): string {
 }
 
 // Derive the Rook memory dir for this workspace from devcrowRoot, mirroring the
-// Claude Code project-slug naming (F:\DevCrow\Dev → F--DevCrow-Dev). Lets a KB
+// Claude Code project-slug naming (C:\Users\you\proj → C--Users-you-proj). Lets a KB
 // doc reference a memory file by bare name (e.g. feedback_glob_path_prefix.md).
 function memoryRoot(devcrowRoot: string): string {
   const slug = devcrowRoot.replace(/^([A-Za-z]):/, '$1-').replace(/[\\/]/g, '-');

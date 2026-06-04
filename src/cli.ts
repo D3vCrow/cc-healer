@@ -16,9 +16,9 @@ const VERSION = '0.0.1';
 
 // Workspace root resolution: explicit `--workspace <dir>` › `CC_HEALER_WORKSPACE`
 // env › `process.cwd()`. The root is the second resolution candidate for memory/
-// knowledge refs and the search base for the fix-engine (was the hardcoded literal
-// `F:/DevCrow/Dev`). Normalized to forward slashes so a cwd-derived root on Windows
-// (`F:\X\Y`) is byte-identical to the old literal when run from the workspace root —
+// knowledge refs and the search base for the fix-engine (replaced a hardcoded
+// workspace literal). Normalized to forward slashes so a cwd-derived root on Windows
+// (`C:\X\Y`) is byte-identical to that literal when run from the workspace root —
 // keeping project-slug derivation (cwdToProjectSlug) and ref display stable.
 function resolveWorkspaceRoot(args: string[]): string {
   const wsIdx = args.indexOf('--workspace');
@@ -90,7 +90,7 @@ type TierConfig = {
 
 function cwdToProjectSlug(cwd: string): string {
   // Claude Code project dir naming: drive letter + double-dash + path-with-dashes.
-  // F:\DevCrow\Dev → F--DevCrow-Dev (also handles forward-slash form).
+  // C:\Users\you\proj → C--Users-you-proj (also handles forward-slash form).
   return cwd.replace(/^([A-Za-z]):/, '$1-').replace(/[\\/]/g, '-');
 }
 

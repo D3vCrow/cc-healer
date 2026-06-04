@@ -153,13 +153,13 @@ export const declaredEnvSet: Check = (ctx) => {
 
 /**
  * `Spec:` / `Shared patterns:` references in the body must resolve at cwd
- * or under `F:/DevCrow/Dev/`.
+ * or under the workspace root.
  * Severity: warn.
  * Source: locked design §2 row "File refs in body resolve".
  *
  * Real-world body shapes observed in ~/.claude/commands/:
  *   Spec: docs/superpowers/specs/foo.md §4.3
- *   Spec: `F:/DevCrow/Dev/docs/claude-output-conventions.md` (Rook quality line)
+ *   Spec: `<workspace>/docs/claude-output-conventions.md` (Rook quality line)
  *   Shared patterns: docs/superpowers/reference/foo.md §3.1–§3.7
  * Path token = first whitespace-delimited fragment after the colon, with a
  * leading/trailing backtick stripped. Section refs (§…, paren tails) are dropped.

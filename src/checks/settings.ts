@@ -143,7 +143,7 @@ export function settingsParses(content: string, file: string): Issue[] {
 
 // --- command-string parsing helpers -------------------------------------
 
-// Tokenize a hook command, respecting single/double quotes (Chris's session-record
+// Tokenize a hook command, respecting single/double quotes (e.g. a session-record
 // hook quotes its path: `python "C:/…/parse.py" --latest-session`).
 function tokenizeCommand(cmd: string): string[] {
   const tokens: string[] = [];

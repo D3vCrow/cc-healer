@@ -3,7 +3,7 @@
 // proposeFixes() turns a CheckReport into reviewable PROPOSALS + NEEDS-HUMAN
 // residue by dispatching each check kind to its registered Fixer. applyProposals()
 // is the separate, explicit write step — gated behind the CLI's --write flag so
-// autonomous runs stay propose-only (autonomy 1a: memory content is Chris's).
+// autonomous runs stay propose-only (autonomy 1a: memory content is the user's).
 
 import { readFile, writeFile } from 'node:fs/promises';
 import type { CheckReport } from '../types.js';

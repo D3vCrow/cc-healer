@@ -31,7 +31,7 @@ const SKILL_REQUIRED_FIELDS = ['description'] as const;
 const SCHEDULED_TASKS_SEGMENT = 'scheduled-tasks';
 
 // installPaths in installed_plugins.json are Windows-shaped strings with double
-// backslashes (e.g. "C:\\Users\\Christophoros\\.claude\\plugins\\cache\\..."). Node's
+// backslashes (e.g. "C:\\Users\\you\\.claude\\plugins\\cache\\..."). Node's
 // fs.access tolerates either separator on Windows, so no normalization needed.
 
 interface InstalledPluginRecord {
