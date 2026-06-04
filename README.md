@@ -20,7 +20,7 @@ Parser shape (`validate_skill.py`) lifted from [skill-forge](https://github.com/
 | **V1 — `/_audit-skills` (internal)** | 2026-05-11 → 2026-06-08 | Full skill-frontmatter linter, JSON output |
 | **V2 — Full sweep** | 2026-06-08 → 2026-06-29 | Memory + hooks + settings + plugin checks |
 | **V3 — Public OSS** | 2026-06-29 → 2026-07-27 | npm publish + GH release |
-| **V4 — Pro pack ($29)** | 2026-07-27 → 2026-09-15 | Advanced rules + custom rubrics |
+| **V4 — Pro pack** | 2026-07-27 → 2026-09-15 | Advanced rules + custom rubrics; pricing TBD |
 
 Verify gate: 2026-08-01.
 
