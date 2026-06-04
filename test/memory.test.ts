@@ -26,7 +26,7 @@ const FIXTURES = join(HERE, 'fixtures', 'memory');
 const TEST_TODAY = '2026-05-06';
 const TEST_ENV: Record<string, string | undefined> = {};
 const TEST_CWD = process.cwd();
-const TEST_DEVCROW_ROOT = 'F:/DevCrow/Dev';
+const TEST_WORKSPACE_ROOT = 'C:/workspace';
 
 async function loadFixture(
   name: string,
@@ -47,7 +47,7 @@ async function loadFixture(
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
     cwd: opts?.cwd ?? TEST_CWD,
-    workspaceRoot: opts?.workspaceRoot ?? TEST_DEVCROW_ROOT,
+    workspaceRoot: opts?.workspaceRoot ?? TEST_WORKSPACE_ROOT,
   };
 }
 
@@ -138,7 +138,7 @@ test('memoryVerifyByPast: fires on a block-sequence file with past verify_by (en
     today: '2026-05-01',
     env: TEST_ENV,
     cwd: TEST_CWD,
-    workspaceRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
   };
   const issues = memoryVerifyByPast(ctx);
   assert.equal(issues.length, 1);
@@ -307,7 +307,7 @@ test('memoryVerifyByPast: audit_* file with past verify_by → 0 issues (histori
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    workspaceRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
   };
   // verify_by 2025-01-01 is well past TEST_TODAY, but audit_* is exempt.
   assert.deepEqual(memoryVerifyByPast(ctx), []);

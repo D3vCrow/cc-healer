@@ -22,7 +22,7 @@ const FIXTURES = join(HERE, 'fixtures', 'plugins');
 const TEST_TODAY = '2026-05-11';
 const TEST_ENV: Record<string, string | undefined> = {};
 const TEST_CWD = process.cwd();
-const TEST_DEVCROW_ROOT = 'F:/DevCrow/Dev';
+const TEST_WORKSPACE_ROOT = 'C:/workspace';
 
 async function loadFixture(
   relPath: string,
@@ -49,7 +49,7 @@ async function loadFixture(
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
     cwd: opts?.cwd ?? TEST_CWD,
-    workspaceRoot: opts?.workspaceRoot ?? TEST_DEVCROW_ROOT,
+    workspaceRoot: opts?.workspaceRoot ?? TEST_WORKSPACE_ROOT,
     ...(opts?.pluginIndex ? { pluginIndex: opts.pluginIndex } : {}),
   };
 }
@@ -158,7 +158,7 @@ test('pluginScheduleSkillRefsExist: SKILL.md NOT under scheduled-tasks/ → 0 is
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    workspaceRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
   };
   assert.deepEqual(pluginScheduleSkillRefsExist(ctx), []);
 });
@@ -201,7 +201,7 @@ test('pluginSymlinksResolve: lstat fails (path missing) → 0 issues (self-guard
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    workspaceRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
   };
   assert.deepEqual(await pluginSymlinksResolve(ctx), []);
 });
@@ -248,7 +248,7 @@ test('pluginSymlinksResolve: valid symlink to non-empty file → 0 issues', asyn
       today: TEST_TODAY,
       env: TEST_ENV,
       cwd: TEST_CWD,
-      workspaceRoot: TEST_DEVCROW_ROOT,
+      workspaceRoot: TEST_WORKSPACE_ROOT,
     };
     assert.deepEqual(await pluginSymlinksResolve(ctx), []);
   } finally {
@@ -276,7 +276,7 @@ test('pluginSymlinksResolve: dangling symlink (target does not exist) → 1 erro
       today: TEST_TODAY,
       env: TEST_ENV,
       cwd: TEST_CWD,
-      workspaceRoot: TEST_DEVCROW_ROOT,
+      workspaceRoot: TEST_WORKSPACE_ROOT,
     };
     const issues = await pluginSymlinksResolve(ctx);
     assert.equal(issues.length, 1);
@@ -309,7 +309,7 @@ test('pluginSymlinksResolve: symlink to empty file → 1 error', async (t) => {
       today: TEST_TODAY,
       env: TEST_ENV,
       cwd: TEST_CWD,
-      workspaceRoot: TEST_DEVCROW_ROOT,
+      workspaceRoot: TEST_WORKSPACE_ROOT,
     };
     const issues = await pluginSymlinksResolve(ctx);
     assert.equal(issues.length, 1);

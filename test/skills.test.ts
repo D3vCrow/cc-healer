@@ -37,7 +37,7 @@ const TEST_ENV: Record<string, string | undefined> = {};
 // process.cwd() points at the package root — that's exactly the resolution
 // surface we want body refs in fixtures to test against.
 const TEST_CWD = process.cwd();
-const TEST_DEVCROW_ROOT = 'F:/DevCrow/Dev';
+const TEST_WORKSPACE_ROOT = 'C:/workspace';
 
 async function loadFixture(
   name: string,
@@ -58,7 +58,7 @@ async function loadFixture(
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
     cwd: opts?.cwd ?? TEST_CWD,
-    workspaceRoot: opts?.workspaceRoot ?? TEST_DEVCROW_ROOT,
+    workspaceRoot: opts?.workspaceRoot ?? TEST_WORKSPACE_ROOT,
   };
 }
 
@@ -416,7 +416,7 @@ function ctxFrom(content: string, file = 'inline.md'): CheckContext {
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    workspaceRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
   };
 }
 
