@@ -169,11 +169,11 @@ export const memoryVerifyByPast: Check = (ctx) => {
 
 /**
  * Memory-tier ref resolver: a sibling memory file (bare name) OR a
- * workspace-relative path (knowledge/…, docs/…) against devcrowRoot. Absolute
+ * workspace-relative path (knowledge/…, docs/…) against workspaceRoot. Absolute
  * refs probe themselves only.
  */
 const memoryRefCandidates: RefCandidateResolver = (ref, dir, ctx) =>
-  isAbsolute(ref) ? [ref] : [join(dir, ref), join(ctx.devcrowRoot, ref)];
+  isAbsolute(ref) ? [ref] : [join(dir, ref), join(ctx.workspaceRoot, ref)];
 
 /**
  * Each filename in `supersedes` / `superseded_by` / `related` must resolve at

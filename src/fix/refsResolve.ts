@@ -11,7 +11,7 @@
 //
 // Resolution searches knowledge/ + docs/ for the ref's basename. A unique hit
 // becomes a textual replacement to the workspace-relative path (forward slashes)
-// — exactly the form `memoryRefsResolve` accepts (join(devcrowRoot, ref) exists).
+// — exactly the form `memoryRefsResolve` accepts (join(workspaceRoot, ref) exists).
 // Three deterministic fallbacks fire only when the ref does not resolve as written:
 // (a) a date-SUFFIX basename (`<stem>-<date>.md`) re-searched as date-PREFIX
 // (`<date>-<stem>.md`), the workspace convention; (b) the basename under the Rook
@@ -61,12 +61,12 @@ function flipDateSuffix(base: string): string | null {
   return m ? `${m[2]}-${m[1]}.md` : null;
 }
 
-export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memoryDir }) => {
+export const fixRefsResolve: Fixer = async (issues, { target, workspaceRoot, memoryDir }) => {
   const proposals: FixProposal[] = [];
   const unfixable: Unfixable[] = [];
   // Only these subtrees hold legitimate ref targets; searching the whole repo
   // would risk matching build artifacts or unrelated files of the same name.
-  const searchRoots = [join(devcrowRoot, 'knowledge'), join(devcrowRoot, 'docs')];
+  const searchRoots = [join(workspaceRoot, 'knowledge'), join(workspaceRoot, 'docs')];
 
   for (const issue of issues) {
     const m = REF_MSG.exec(issue.message);
@@ -123,13 +123,13 @@ export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memor
     }
 
     if (matches.length === 1) {
-      // Memory files live outside devcrowRoot, so a workspace-relative path can't
+      // Memory files live outside workspaceRoot, so a workspace-relative path can't
       // express them; knowledgeRefCandidates resolves a bare memory basename, so
       // that is the form proposed for a cross-tier hit.
       const newText =
         mode === 'memory'
           ? basename(matches[0]!)
-          : relative(devcrowRoot, matches[0]!).replace(/\\/g, '/');
+          : relative(workspaceRoot, matches[0]!).replace(/\\/g, '/');
       const reason =
         mode === 'memory'
           ? `resolve ${field} ref (cross-tier memory) → ${newText}`
@@ -153,7 +153,7 @@ export const fixRefsResolve: Fixer = async (issues, { target, devcrowRoot, memor
         reason: 'target not found under knowledge/ or docs/ — dangling (create target, rename, or remove)',
       });
     } else {
-      const rels = matches.map((p) => relative(devcrowRoot, p).replace(/\\/g, '/'));
+      const rels = matches.map((p) => relative(workspaceRoot, p).replace(/\\/g, '/'));
       unfixable.push({
         file: issue.file,
         check: issue.check,

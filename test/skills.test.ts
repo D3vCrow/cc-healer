@@ -45,7 +45,7 @@ async function loadFixture(
     today?: string;
     env?: Record<string, string | undefined>;
     cwd?: string;
-    devcrowRoot?: string;
+    workspaceRoot?: string;
   },
 ): Promise<CheckContext> {
   const filePath = join(FIXTURES, name);
@@ -58,7 +58,7 @@ async function loadFixture(
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
     cwd: opts?.cwd ?? TEST_CWD,
-    devcrowRoot: opts?.devcrowRoot ?? TEST_DEVCROW_ROOT,
+    workspaceRoot: opts?.workspaceRoot ?? TEST_DEVCROW_ROOT,
   };
 }
 
@@ -416,7 +416,7 @@ function ctxFrom(content: string, file = 'inline.md'): CheckContext {
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_DEVCROW_ROOT,
   };
 }
 

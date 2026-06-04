@@ -34,7 +34,7 @@ async function loadFixture(
     today?: string;
     env?: Record<string, string | undefined>;
     cwd?: string;
-    devcrowRoot?: string;
+    workspaceRoot?: string;
   },
 ): Promise<CheckContext> {
   const filePath = join(FIXTURES, name);
@@ -47,7 +47,7 @@ async function loadFixture(
     today: opts?.today ?? TEST_TODAY,
     env: opts?.env ?? TEST_ENV,
     cwd: opts?.cwd ?? TEST_CWD,
-    devcrowRoot: opts?.devcrowRoot ?? TEST_DEVCROW_ROOT,
+    workspaceRoot: opts?.workspaceRoot ?? TEST_DEVCROW_ROOT,
   };
 }
 
@@ -138,7 +138,7 @@ test('memoryVerifyByPast: fires on a block-sequence file with past verify_by (en
     today: '2026-05-01',
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_DEVCROW_ROOT,
   };
   const issues = memoryVerifyByPast(ctx);
   assert.equal(issues.length, 1);
@@ -307,7 +307,7 @@ test('memoryVerifyByPast: audit_* file with past verify_by → 0 issues (histori
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: TEST_DEVCROW_ROOT,
+    workspaceRoot: TEST_DEVCROW_ROOT,
   };
   // verify_by 2025-01-01 is well past TEST_TODAY, but audit_* is exempt.
   assert.deepEqual(memoryVerifyByPast(ctx), []);
@@ -340,7 +340,7 @@ test('memoryRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded)'
   assert.deepEqual(await memoryRefsResolve(ctx), []);
 });
 
-test('memoryRefsResolve: workspace-relative ref (skills/clean.md under devcrowRoot) resolves → 0 issues', async () => {
+test('memoryRefsResolve: workspace-relative ref (skills/clean.md under workspaceRoot) resolves → 0 issues', async () => {
   const content = [
     '---',
     'name: T',
@@ -360,7 +360,7 @@ test('memoryRefsResolve: workspace-relative ref (skills/clean.md under devcrowRo
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: join(HERE, 'fixtures'),
+    workspaceRoot: join(HERE, 'fixtures'),
   };
   // skills/clean.md exists under test/fixtures (the skills-tier fixture set),
   // so a workspace-relative ref must resolve even though it isn't a sibling.
@@ -387,7 +387,7 @@ test('memoryRefsResolve: workspace-relative ref that exists nowhere → 1 warn',
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: join(HERE, 'fixtures'),
+    workspaceRoot: join(HERE, 'fixtures'),
   };
   const issues = await memoryRefsResolve(ctx);
   assert.equal(issues.length, 1);

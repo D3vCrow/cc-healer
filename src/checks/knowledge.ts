@@ -35,11 +35,11 @@ function expandTilde(p: string): string {
   return p.startsWith('~') ? p.replace(/^~/, homedir()) : p;
 }
 
-// Derive the Rook memory dir for this workspace from devcrowRoot, mirroring the
+// Derive the Rook memory dir for this workspace from workspaceRoot, mirroring the
 // Claude Code project-slug naming (C:\Users\you\proj → C--Users-you-proj). Lets a KB
 // doc reference a memory file by bare name (e.g. feedback_glob_path_prefix.md).
-function memoryRoot(devcrowRoot: string): string {
-  const slug = devcrowRoot.replace(/^([A-Za-z]):/, '$1-').replace(/[\\/]/g, '-');
+function memoryRoot(workspaceRoot: string): string {
+  const slug = workspaceRoot.replace(/^([A-Za-z]):/, '$1-').replace(/[\\/]/g, '-');
   return join(homedir(), '.claude', 'projects', slug, 'memory');
 }
 
@@ -48,7 +48,7 @@ function memoryRoot(devcrowRoot: string): string {
  *   - the expanded `~` path (home-relative refs into ~/.claude/…)
  *   - itself, if absolute (drive-letter C:/… or POSIX absolute)
  *   - sibling / `../`-relative against the doc's own dir
- *   - workspace-relative against devcrowRoot (knowledge/…, docs/…)
+ *   - workspace-relative against workspaceRoot (knowledge/…, docs/…)
  *   - knowledge-root-relative (research/…, decisions/… without the knowledge/ prefix)
  *   - the Rook memory dir, for a bare memory name (feedback_*.md)
  *   - the memory dir's parent, for a memory/-prefixed ref (memory/feedback_*.md)
@@ -63,11 +63,11 @@ export const knowledgeRefCandidates: RefCandidateResolver = (ref, dir, ctx) => {
   const path = ref.trim().split(/\s+/)[0] || ref;
   if (path.startsWith('~')) return [expandTilde(path)];
   if (isAbsolute(path)) return [path];
-  const mem = memoryRoot(ctx.devcrowRoot);
+  const mem = memoryRoot(ctx.workspaceRoot);
   return [
     join(dir, path),
-    join(ctx.devcrowRoot, path),
-    join(ctx.devcrowRoot, 'knowledge', path),
+    join(ctx.workspaceRoot, path),
+    join(ctx.workspaceRoot, 'knowledge', path),
     join(mem, path),
     join(dirname(mem), path),
   ];

@@ -203,7 +203,7 @@ async function scanDir(
   target: string,
   opts: {
     checks: ReadonlyArray<Check>;
-    devcrowRoot: string;                  // workspace root threaded into CheckContext
+    workspaceRoot: string;                  // workspace root threaded into CheckContext
     skipFiles?: ReadonlySet<string>;
     skipDirs?: ReadonlySet<string>;
     recursive?: boolean;
@@ -215,7 +215,7 @@ async function scanDir(
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const cwd = process.cwd();
-  const devcrowRoot = opts.devcrowRoot;
+  const workspaceRoot = opts.workspaceRoot;
   const issues: Issue[] = [];
   let scanned = 0;
   let withFrontmatter = 0;
@@ -259,7 +259,7 @@ async function scanDir(
       today,
       env: process.env,
       cwd,
-      devcrowRoot,
+      workspaceRoot,
       indexes,
       pluginIndex,
     };
@@ -402,7 +402,7 @@ async function main(): Promise<number> {
     ? await config.scan(config.target)
     : await scanDir(config.target, {
         checks: config.checks,
-        devcrowRoot: workspaceRoot,
+        workspaceRoot,
         skipFiles: config.skipFiles,
         skipDirs: config.skipDirs,
         recursive: config.recursive,
@@ -425,7 +425,7 @@ async function main(): Promise<number> {
         : undefined;
     const result = await proposeFixes(report, {
       target: config.target,
-      devcrowRoot: workspaceRoot,
+      workspaceRoot,
       memoryDir,
     });
     if (doWrite && result.proposals.length > 0) {

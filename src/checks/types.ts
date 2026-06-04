@@ -36,7 +36,7 @@ export interface CheckContext {
   today: string;                                 // YYYY-MM-DD, set once per scan; lets tests pin time deterministically
   env: Record<string, string | undefined>;       // process.env in production; tests pin to controlled subsets
   cwd: string;                                   // process.cwd() in production; used by fileRefsResolve as one of two roots
-  devcrowRoot: string;                           // workspace root in production; second root for fileRefsResolve
+  workspaceRoot: string;                           // workspace root in production; second root for fileRefsResolve
   indexes?: MemoryIndexes;                       // cross-file index for memory tier; undefined for skill-tier scans
   pluginIndex?: PluginIndex;                     // cross-file index for plugin tier; undefined when not plumbed
 }

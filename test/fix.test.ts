@@ -22,7 +22,7 @@ function refIssue(file: string, message: string): Issue {
 
 test('fixRefsResolve: bare date-ref unique under knowledge/research → proposal with prefixed path', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: 2026-01-01-foo.md')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(unfixable.length, 0);
   assert.equal(proposals.length, 1);
   const p = proposals[0]!;
@@ -34,7 +34,7 @@ test('fixRefsResolve: bare date-ref unique under knowledge/research → proposal
 
 test('fixRefsResolve: discoveries/ partial path → repaired to knowledge/discoveries/', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: discoveries/2026-01-02-bar.md')];
-  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0]!.oldText, 'discoveries/2026-01-02-bar.md');
   assert.equal(proposals[0]!.newText, 'knowledge/discoveries/2026-01-02-bar.md');
@@ -42,7 +42,7 @@ test('fixRefsResolve: discoveries/ partial path → repaired to knowledge/discov
 
 test('fixRefsResolve: target living under docs/ resolves there, not just knowledge/', async () => {
   const issues = [refIssue('mem.md', 'supersedes references missing file: 2026-01-03-baz.md')];
-  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0]!.field, 'supersedes');
   assert.equal(proposals[0]!.newText, 'docs/handoffs/2026-01-03-baz.md');
@@ -50,7 +50,7 @@ test('fixRefsResolve: target living under docs/ resolves there, not just knowled
 
 test('fixRefsResolve: no such file anywhere → unfixable (dangling), no proposal', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: 2026-09-09-nope.md')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /dangling/);
@@ -58,7 +58,7 @@ test('fixRefsResolve: no such file anywhere → unfixable (dangling), no proposa
 
 test('fixRefsResolve: same basename in two roots → unfixable (ambiguous), not guessed', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: dup-target.md')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /ambiguous/);
@@ -66,7 +66,7 @@ test('fixRefsResolve: same basename in two roots → unfixable (ambiguous), not 
 
 test('fixRefsResolve: unparseable message → unfixable, never throws', async () => {
   const issues = [refIssue('mem.md', 'totally different message shape')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /could not parse/);
@@ -79,7 +79,7 @@ test('fixRefsResolve: unparseable message → unfixable, never throws', async ()
 
 test('fixRefsResolve: date-suffix ref flips to existing date-prefix file → proposal', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: qux-2026-02-02.md')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(unfixable.length, 0);
   assert.equal(proposals.length, 1);
   const p = proposals[0]!;
@@ -90,7 +90,7 @@ test('fixRefsResolve: date-suffix ref flips to existing date-prefix file → pro
 
 test('fixRefsResolve: date-suffix ref with dir prefix flips, oldText keeps full ref', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: discoveries/qux-2026-02-02.md')];
-  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0]!.oldText, 'discoveries/qux-2026-02-02.md');
   assert.equal(proposals[0]!.newText, 'knowledge/discoveries/2026-02-02-qux.md');
@@ -98,7 +98,7 @@ test('fixRefsResolve: date-suffix ref with dir prefix flips, oldText keeps full 
 
 test('fixRefsResolve: date-suffix ref whose flip target is absent → dangling, no false proposal', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: nope-2026-09-09.md')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /dangling/);
@@ -116,7 +116,7 @@ test('fixRefsResolve: cross-tier memory ref (broken rel path) → proposal with 
   const issues = [refIssue('mem.md', `related references missing file: ${CROSS_REF}`)];
   const { proposals, unfixable } = await fixRefsResolve(issues, {
     target: TARGET,
-    devcrowRoot: FIX_ROOT,
+    workspaceRoot: FIX_ROOT,
     memoryDir: MEM_DIR,
   });
   assert.equal(unfixable.length, 0);
@@ -129,7 +129,7 @@ test('fixRefsResolve: cross-tier memory ref (broken rel path) → proposal with 
 
 test('fixRefsResolve: cross-tier resolution is opt-gated — no memoryDir → dangling (behaviour unchanged)', async () => {
   const issues = [refIssue('mem.md', `related references missing file: ${CROSS_REF}`)];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /dangling/);
@@ -139,7 +139,7 @@ test('fixRefsResolve: cross-tier basename absent from memory dir → dangling, n
   const issues = [refIssue('mem.md', 'related references missing file: feedback_nonexistent_rule.md')];
   const { proposals, unfixable } = await fixRefsResolve(issues, {
     target: TARGET,
-    devcrowRoot: FIX_ROOT,
+    workspaceRoot: FIX_ROOT,
     memoryDir: MEM_DIR,
   });
   assert.equal(proposals.length, 0);
@@ -153,7 +153,7 @@ test('fixRefsResolve: cross-tier basename absent from memory dir → dangling, n
 
 test('fixRefsResolve: no-extension ref → .md appended, resolves under knowledge/', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: 2026-01-01-foo')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(unfixable.length, 0);
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0]!.oldText, '2026-01-01-foo'); // bare ref replaced verbatim
@@ -162,7 +162,7 @@ test('fixRefsResolve: no-extension ref → .md appended, resolves under knowledg
 
 test('fixRefsResolve: no-extension ref → .md appended, resolves in memory dir as bare name', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: feedback_sample_rule')];
-  const { proposals } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT, memoryDir: MEM_DIR });
+  const { proposals } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT, memoryDir: MEM_DIR });
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0]!.oldText, 'feedback_sample_rule');
   assert.equal(proposals[0]!.newText, 'feedback_sample_rule.md');
@@ -170,7 +170,7 @@ test('fixRefsResolve: no-extension ref → .md appended, resolves in memory dir 
 
 test('fixRefsResolve: no-extension ref with no target even after .md → dangling', async () => {
   const issues = [refIssue('mem.md', 'related references missing file: 2026-09-09-nope-no-ext')];
-  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, devcrowRoot: FIX_ROOT, memoryDir: MEM_DIR });
+  const { proposals, unfixable } = await fixRefsResolve(issues, { target: TARGET, workspaceRoot: FIX_ROOT, memoryDir: MEM_DIR });
   assert.equal(proposals.length, 0);
   assert.equal(unfixable.length, 1);
   assert.match(unfixable[0]!.reason, /dangling/);
@@ -189,7 +189,7 @@ test('proposeFixes: ignores issues with no registered fixer (e.g. verify-by-past
       { severity: 'warn', check: 'memory-verify-by-past', file: 'mem.md', message: 'stale' },
     ],
   };
-  const { proposals } = await proposeFixes(report, { target: TARGET, devcrowRoot: FIX_ROOT });
+  const { proposals } = await proposeFixes(report, { target: TARGET, workspaceRoot: FIX_ROOT });
   assert.equal(proposals.length, 1); // only the refs-resolve finding produced a proposal
 });
 

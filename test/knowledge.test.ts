@@ -22,7 +22,7 @@ const TEST_ENV: Record<string, string | undefined> = {};
 const TEST_CWD = process.cwd();
 
 // Build a ctx from inline frontmatter. filePath defaults to a decisions/ doc so
-// `../`-relative refs resolve against a real fixture subtree; devcrowRoot is the
+// `../`-relative refs resolve against a real fixture subtree; workspaceRoot is the
 // fixture workspace root so knowledge-root / workspace-relative refs resolve too.
 function ctxFrom(
   frontmatter: string[],
@@ -37,7 +37,7 @@ function ctxFrom(
     today: opts?.today ?? TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: FIX_ROOT,
+    workspaceRoot: FIX_ROOT,
   };
 }
 
@@ -77,7 +77,7 @@ test('knowledgeVerifyByPast: no frontmatter → 0 issues (self-guarded)', () => 
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: FIX_ROOT,
+    workspaceRoot: FIX_ROOT,
   };
   assert.deepEqual(knowledgeVerifyByPast(ctx), []);
 });
@@ -178,7 +178,7 @@ test('knowledgeRefsResolve: broken-yaml → 0 issues (self-guarded)', async () =
     today: TEST_TODAY,
     env: TEST_ENV,
     cwd: TEST_CWD,
-    devcrowRoot: FIX_ROOT,
+    workspaceRoot: FIX_ROOT,
   };
   assert.deepEqual(await knowledgeRefsResolve(ctx), []);
 });

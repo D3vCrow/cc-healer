@@ -188,7 +188,7 @@ export const fileRefsResolve: Check = async (ctx) => {
     seen.add(path);
     const candidates = isAbsolute(path)
       ? [path]
-      : [join(ctx.cwd, path), join(ctx.devcrowRoot, path)];
+      : [join(ctx.cwd, path), join(ctx.workspaceRoot, path)];
     let resolved = false;
     for (const candidate of candidates) {
       if (await fileExists(candidate)) {
@@ -201,7 +201,7 @@ export const fileRefsResolve: Check = async (ctx) => {
         severity: 'warn',
         check: 'file-refs-resolve',
         file: ctx.file,
-        message: `body ref '${path}' does not exist at cwd or ${ctx.devcrowRoot}`,
+        message: `body ref '${path}' does not exist at cwd or ${ctx.workspaceRoot}`,
       });
     }
   }
@@ -277,7 +277,7 @@ export const verifyByPast: Check = (ctx) => {
 //
 // Convention source: feedback_skill_writing.md rules 4-6 (workspace memory).
 // These fire on any command/skill .md that has frontmatter (i.e. is a skill).
-// Plugin-authored commands that don't follow the DevCrow footer convention
+// Plugin-authored commands that don't follow the skill footer convention
 // surface here too — acceptable as a backlog signal at warn severity (exit
 // code counts errors only). Add a scoping exclude-list if plugin noise grows.
 //
