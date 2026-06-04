@@ -61,7 +61,7 @@ Usage:
   cc-healer --version               print version
   cc-healer --help                  this message
 
-Tiers (per docs/cc-healer-v1-spec.md):
+Tiers:
   skills    — Tier 1, ~/.claude/commands (9 checks live)
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (9 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (2 checks live)
@@ -367,7 +367,7 @@ async function main(): Promise<number> {
   if (tierIdx !== -1) {
     tierName = args[tierIdx + 1] ?? null;
     if (!tierName) {
-      console.error('cc-healer: --tier requires a name (skills | memory | settings | plugins)');
+      console.error('cc-healer: --tier requires a name (skills | memory | knowledge | settings | plugins)');
       return 2;
     }
     const remaining = [...args.slice(0, tierIdx), ...args.slice(tierIdx + 2)];
