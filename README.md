@@ -2,13 +2,15 @@
 
 > Claude Code workspace health-check CLI — lints skills, memory files, hooks, and settings.
 
-**Status:** Functional. All five deterministic tiers are live — skills, memory, knowledge, settings, plugins — plus a propose-only `--fix` engine for the memory + knowledge tiers. Built on the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` (workspace-internal).
+**Status:** Functional. All five deterministic tiers are live — skills, memory, knowledge, settings, plugins — plus a propose-only `--fix` engine for the memory + knowledge tiers.
 
 ## Why
 
 Claude Code workspaces drift. Hook scripts go missing, skill frontmatter rots, memory files lose their `verify_by:` dates, settings.json schema shifts between releases. cc-healer catches these before they bite.
 
-Built on the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` and the `validate_skill.py` parser shape lifted from [skill-forge](https://github.com/AgriciDaniel/skill-forge) (vet 2026-04-26).
+Some checks encode specific conventions — Rook-style memory frontmatter (`verify_by:` dates, typed entries) and `devcrow:` skill blocks. A skill that doesn't use them is flagged at `info` severity, never as an error.
+
+Parser shape (`validate_skill.py`) lifted from [skill-forge](https://github.com/AgriciDaniel/skill-forge) (vet 2026-04-26).
 
 ## Roadmap
 
@@ -22,46 +24,55 @@ Built on the locked design at `docs/handoffs/2026-04-19-audit-skills-design.md` 
 
 Verify gate: 2026-08-01.
 
-## Quick start (V0 smoke)
+## Quick start
 
 ```bash
 npm install
-npm run dev -- "$HOME/.claude/commands"     # macOS / Linux / Git Bash
-npm run dev -- "%USERPROFILE%/.claude/commands"   # Windows cmd
+npm run build
+node dist/cli.js --help
 ```
 
-V0 outputs:
-- Count of `.md` files scanned
-- Count of files with frontmatter
-- Errors (parser failures, missing `description`)
+Each tier has a sensible default path — run from your workspace root, or pass an explicit path / `--workspace <dir>`:
 
-That's it for V0. V1 adds the full check catalog from the spec.
+```bash
+node dist/cli.js --tier skills       # lint ~/.claude/commands
+node dist/cli.js --tier memory       # lint the project memory dir
+node dist/cli.js --tier settings     # lint ~/.claude/settings.json
+node dist/cli.js --tier knowledge --workspace <dir>   # lint <dir>/knowledge
+node dist/cli.js --tier memory --json                 # machine-readable findings
+node dist/cli.js --tier memory --fix                  # propose fixes (propose-only)
+node dist/cli.js --tier memory --fix --write          # apply the proposed fixes
+```
 
-## Architecture (V1+)
+The exit code counts errors only — warnings and info never fail a run.
+
+## Architecture
 
 ```
 src/
-├── cli.ts                  # Entry, arg parsing, output formatting
+├── cli.ts                  # Entry, arg parsing, tier resolution, report output
+├── types.ts                # Shared Issue / report types
+├── memory-indexes.ts       # Cross-file index for the memory tier
 ├── parser/
-│   └── frontmatter.ts      # Lifted from skill-forge validate_skill.py shape
+│   └── frontmatter.ts      # Zero-dep frontmatter parser (skill-forge shape)
 ├── checks/
 │   ├── skills.ts           # Tier 1 — skill frontmatter
-│   ├── memory.ts           # Tier 2 — Rook v2 frontmatter + index parity
+│   ├── memory.ts           # Tier 2 — Rook memory frontmatter + index parity
 │   ├── knowledge.ts        # KB tier — knowledge/ verify-by + ref resolution
 │   ├── settings.ts         # Tier 3 — settings.json + hooks
 │   └── plugins.ts          # Tier 4 — install integrity
-└── output/
-    ├── text.ts             # Default colored report
-    └── json.ts             # --json
+├── skills/
+│   └── registry.ts         # Skill-check registry
+└── fix/                    # Propose-only --fix engine (memory + knowledge)
+    ├── index.ts            # proposeFixes / applyProposals
+    └── refsResolve.ts      # Cross-ref resolution fixer
 ```
-
-Full spec: `docs/cc-healer-v1-spec.md` (workspace-internal).
 
 ## Design principles
 
 - **Deterministic.** No LLM calls. Parses, validates, reports. Fast + free.
 - **Zero runtime deps.** TypeScript stdlib only. No YAML library — hand-rolled parser per skill-forge precedent.
-- **Read-only by default.** `--fix` deferred to V2 with explicit safe-set.
+- **Read-only by default.** `--fix` proposes only; nothing is written without explicit `--write`.
 - **Local-only.** No telemetry. No cloud. All checks run on your machine.
 - **Schema additive.** New checks layer in; existing ones don't break.
 
