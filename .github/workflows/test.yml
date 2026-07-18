@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege token: this workflow only reads the repo to test it.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: ${{ matrix.os }} · node ${{ matrix.node }}
@@ -16,8 +20,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [20, 22]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions pinned to commit SHA, not tag: a tag can be moved onto malicious
+      # code by whoever controls the action repo (see tj-actions/changed-files,
+      # 2025). The trailing `# ratchet:` comment keeps the human-readable version
+      # and lets sethvargo/ratchet re-resolve on upgrade.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # ratchet:actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
