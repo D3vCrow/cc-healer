@@ -24,8 +24,13 @@ jobs:
       # code by whoever controls the action repo (see tj-actions/changed-files,
       # 2025). The trailing `# ratchet:` comment keeps the human-readable version
       # and lets sethvargo/ratchet re-resolve on upgrade.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # ratchet:actions/setup-node@v4
+      #
+      # v5 targets node24. v4 targeted node20, which GitHub deprecated and was
+      # force-running on node24 anyway - every job logged a deprecation warning.
+      # This is the action's own runtime and is unrelated to the `node:` matrix
+      # below, which is the Node version cc-healer itself is tested against.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # ratchet:actions/checkout@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: npm
