@@ -13,9 +13,14 @@
 //   3. settings-hook-executable   — every hook script has the exec bit (warn; POSIX-only)
 //   4. settings-permission-shadow — no rule string appears in >1 of allow/deny/ask (warn)
 //   5. settings-schema-keys       — top-level keys are in the known CC schema snapshot (warn)
+//   6. settings-rule-of-two-parked — a registered Rule-of-Two gate is actually enforcing (warn)
 //
 // Check 1 is the parse gate (settingsParses + scanSettings short-circuit); checks
-// 2–5 are the post-parse content checks exported in `settingsChecks`.
+// 2–6 are the post-parse content checks exported in `settingsChecks`.
+//
+// Check 6 is the one check here that reads a file OTHER than settings.json: the gate's
+// sidecar flag registry. It is anchored in settings.json (it fires only if the hook is
+// registered there), which is why it lives in this tier rather than its own.
 
 import { access, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -37,6 +42,7 @@ export interface SettingsContext {
   cwd: string; // base for resolving a relative hook path (hook paths are absolute in practice)
   platform: NodeJS.Platform; // process.platform in production; pinned in tests
   today: string; // YYYY-MM-DD; unused today but mirrors CheckContext for forward 48h-diff work
+  home?: string; // homedir() in production; injected in tests so sidecar-config checks are hermetic
 }
 
 type SettingsCheck = (ctx: SettingsContext) => Issue[] | Promise<Issue[]>;
@@ -381,14 +387,96 @@ export const settingsSchemaKeys: SettingsCheck = (ctx) => {
   return issues;
 };
 
+// --- Check 6: settings-rule-of-two-parked -------------------------------
+
+// Sidecar config for the Rule-of-Two PreToolUse gate. The hook hardcodes this path.
+const RULE_OF_TWO_REGISTRY = ['.claude', 'rule_of_two_tools.yaml'] as const;
+
+// Matched on raw text, not a parsed YAML tree, on purpose: cc-healer ships no YAML
+// dependency, and the two facts this check needs (a top-level scalar and the presence
+// of a header comment) are exactly the two things a parser would throw away. `^` with
+// no leading `#` skips commented-out lines.
+const ENFORCE_LINE = /^enforce:[ \t]*(true|false)\b/m;
+const TEMPLATE_MARKER = /seed template|before going live/i;
+
+/**
+ * A registered Rule-of-Two gate should actually be enforcing. Severity: warn.
+ *
+ * Fires ONLY when settings.json registers a hook whose command mentions
+ * `rule_of_two` — a workspace without the gate gets nothing, so this is silent for
+ * everyone who hasn't opted in.
+ *
+ * Why it exists: the gate ships `enforce: false` in its seed registry, and the hook's
+ * contract is "exit 0 on allow/warn/dry-run-reject, non-zero on enforced reject". A
+ * registry left at the default therefore emits telemetry and blocks nothing, while
+ * still *looking* like live protection from the outside. Observed 2026-07-18: parked
+ * 2.5 months, and documented as a blocking hook in DevCrow's own enforcement-tier map
+ * before anyone read line 25. See F:/DevCrow/Dev/docs/enforcement-tiers.md.
+ *
+ * `enforce: false` can be a deliberate observe-mode choice, so this warns rather than
+ * errors, and says so in the message.
+ */
+export const settingsRuleOfTwoParked: SettingsCheck = async (ctx) => {
+  const registered = collectHookCommands(ctx.json).some((h) => /rule_of_two/i.test(h.command));
+  if (!registered) return [];
+
+  const home = ctx.home ?? homedir();
+  const registryPath = join(home, ...RULE_OF_TWO_REGISTRY);
+
+  let raw: string;
+  try {
+    raw = await readFile(registryPath, 'utf-8');
+  } catch {
+    return [
+      {
+        severity: 'warn',
+        check: 'settings-rule-of-two-parked',
+        file: ctx.file,
+        message: `a rule_of_two hook is registered but its flag registry is missing (expected: ${registryPath}) — every tool call falls through unannotated`,
+      },
+    ];
+  }
+
+  const issues: Issue[] = [];
+  const enforce = ENFORCE_LINE.exec(stripBom(raw));
+
+  if (!enforce) {
+    issues.push({
+      severity: 'warn',
+      check: 'settings-rule-of-two-parked',
+      file: ctx.file,
+      message: `rule_of_two registry has no top-level 'enforce:' key (${registryPath}) — the gate cannot be confirmed live`,
+    });
+  } else if (enforce[1] === 'false') {
+    issues.push({
+      severity: 'warn',
+      check: 'settings-rule-of-two-parked',
+      file: ctx.file,
+      message: `rule_of_two gate is parked in dry-run: 'enforce: false' in ${registryPath} — rejects emit telemetry and allow the call. Intentional observe-mode is fine; just don't record it as blocking protection`,
+    });
+  }
+
+  if (TEMPLATE_MARKER.test(stripBom(raw))) {
+    issues.push({
+      severity: 'warn',
+      check: 'settings-rule-of-two-parked',
+      file: ctx.file,
+      message: `rule_of_two registry still carries its seed-template header (${registryPath}) — it looks unreviewed since it was copied`,
+    });
+  }
+
+  return issues;
+};
+
 // --- Registry + scan entry point ----------------------------------------
 
-/** Post-parse content checks (2–5). Check 1 (parse) is the gate in scanSettings. */
+/** Post-parse content checks (2–6). Check 1 (parse) is the gate in scanSettings. */
 export const settingsChecks: ReadonlyArray<SettingsCheck> = [
   settingsHookPathsExist,
   settingsHookExecutable,
   settingsPermissionShadow,
   settingsSchemaKeys,
+  settingsRuleOfTwoParked,
 ];
 
 /**

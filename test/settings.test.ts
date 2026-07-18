@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -10,6 +10,7 @@ import {
   settingsHookExecutable,
   settingsPermissionShadow,
   settingsSchemaKeys,
+  settingsRuleOfTwoParked,
   settingsChecks,
   scanSettings,
   type SettingsContext,
@@ -20,7 +21,10 @@ const TEST_TODAY = '2026-06-03';
 // Build a settings context from an already-parsed JSON value. platform/cwd are
 // injectable so the POSIX-only exec-bit check and relative-path resolution are
 // testable on any host.
-function ctx(json: unknown, opts?: { platform?: NodeJS.Platform; cwd?: string }): SettingsContext {
+function ctx(
+  json: unknown,
+  opts?: { platform?: NodeJS.Platform; cwd?: string; home?: string },
+): SettingsContext {
   return {
     file: 'settings.json',
     filePath: '/virtual/settings.json',
@@ -29,6 +33,7 @@ function ctx(json: unknown, opts?: { platform?: NodeJS.Platform; cwd?: string })
     cwd: opts?.cwd ?? process.cwd(),
     platform: opts?.platform ?? process.platform,
     today: TEST_TODAY,
+    home: opts?.home,
   };
 }
 
@@ -262,8 +267,112 @@ test('scanSettings: full file exercises schema-keys + permission-shadow + hook-p
   }
 });
 
+// --- Check 6: settings-rule-of-two-parked ------------------------------
+
+// Build a fake home containing .claude/rule_of_two_tools.yaml with the given body.
+// Omit `body` to leave the registry absent.
+async function fakeHome(body?: string): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), 'cc-healer-r2-'));
+  if (body !== undefined) {
+    await mkdir(join(home, '.claude'), { recursive: true });
+    await writeFile(join(home, '.claude', 'rule_of_two_tools.yaml'), body);
+  }
+  return home;
+}
+
+const R2_HOOK = {
+  hooks: {
+    PreToolUse: [
+      { matcher: '', hooks: [{ type: 'command', command: 'C:/Users/x/.claude/hooks/rule_of_two_pretool.cmd' }] },
+    ],
+  },
+};
+
+const NO_R2_HOOK = {
+  hooks: { Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'clauditor hook stop' }] }] },
+};
+
+test('settingsRuleOfTwoParked: no rule_of_two hook registered → 0 issues (silent for non-adopters)', async () => {
+  const home = await fakeHome('enforce: false\n');
+  try {
+    assert.deepEqual(await settingsRuleOfTwoParked(ctx(NO_R2_HOOK, { home })), []);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: enforce: true, no template header → 0 issues', async () => {
+  const home = await fakeHome('# live registry\nenforce: true\n\ntools:\n  mcp__x__y: {U: false}\n');
+  try {
+    assert.deepEqual(await settingsRuleOfTwoParked(ctx(R2_HOOK, { home })), []);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: enforce: false → 1 warn (the live DevCrow state)', async () => {
+  const home = await fakeHome('# live registry\nenforce: false\n');
+  try {
+    const issues = await settingsRuleOfTwoParked(ctx(R2_HOOK, { home }));
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.check, 'settings-rule-of-two-parked');
+    assert.equal(issues[0]?.severity, 'warn');
+    assert.match(issues[0]?.message ?? '', /dry-run/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: enforce: false + seed-template header → 2 warns', async () => {
+  const home = await fakeHome(
+    '# Rule-of-Two flag registry — seed template.\n# Copy to ~/.claude/… and review before going live.\nenforce: false\n',
+  );
+  try {
+    const issues = await settingsRuleOfTwoParked(ctx(R2_HOOK, { home }));
+    assert.equal(issues.length, 2);
+    assert.ok(issues.every((i) => i.check === 'settings-rule-of-two-parked'));
+    assert.ok(issues.some((i) => /dry-run/.test(i.message)));
+    assert.ok(issues.some((i) => /seed-template header/.test(i.message)));
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: commented-out enforce line does not count as the key', async () => {
+  const home = await fakeHome('# enforce: true  <- example only\ntools:\n  mcp__x__y: {U: false}\n');
+  try {
+    const issues = await settingsRuleOfTwoParked(ctx(R2_HOOK, { home }));
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]?.message ?? '', /no top-level 'enforce:' key/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: registry file missing → 1 warn', async () => {
+  const home = await fakeHome();
+  try {
+    const issues = await settingsRuleOfTwoParked(ctx(R2_HOOK, { home }));
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]?.message ?? '', /flag registry is missing/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('settingsRuleOfTwoParked: enforce: true but template header left in → 1 warn (header only)', async () => {
+  const home = await fakeHome('# seed template — review before going live\nenforce: true\n');
+  try {
+    const issues = await settingsRuleOfTwoParked(ctx(R2_HOOK, { home }));
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]?.message ?? '', /seed-template header/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 // --- registry ----------------------------------------------------------
 
-test('settingsChecks registry contains the 4 post-parse checks', () => {
-  assert.equal(settingsChecks.length, 4);
+test('settingsChecks registry contains the 5 post-parse checks', () => {
+  assert.equal(settingsChecks.length, 5);
 });
