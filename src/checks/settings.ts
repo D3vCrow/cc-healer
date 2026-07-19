@@ -409,9 +409,10 @@ const TEMPLATE_MARKER = /seed template|before going live/i;
  * Why it exists: the gate ships `enforce: false` in its seed registry, and the hook's
  * contract is "exit 0 on allow/warn/dry-run-reject, non-zero on enforced reject". A
  * registry left at the default therefore emits telemetry and blocks nothing, while
- * still *looking* like live protection from the outside. Observed 2026-07-18: parked
- * 2.5 months, and documented as a blocking hook in DevCrow's own enforcement-tier map
- * before anyone read line 25. See F:/DevCrow/Dev/docs/enforcement-tiers.md.
+ * still *looking* like live protection from the outside. Observed in the wild
+ * 2026-07-18: a gate parked for 2.5 months that had been written up as an active
+ * blocking hook, because its code contains a real reject branch and nobody read the
+ * one config line that decides whether that branch runs.
  *
  * `enforce: false` can be a deliberate observe-mode choice, so this warns rather than
  * errors, and says so in the message.
