@@ -16,9 +16,15 @@ import { join } from 'node:path';
 
 import type { KnowledgeIndex } from './checks/types.js';
 
-// Standard markdown link pattern, capturing the path portion. The path must
-// end in `.md` to be considered a KB-doc reference.
-const MD_LINK = /\[[^\]]*\]\(([^)]+\.md)\)/g;
+// Markdown link pattern, capturing the path portion. The path must end in `.md`
+// to be considered a KB-doc reference.
+//
+// The link text allows one level of balanced brackets: CommonMark permits them,
+// and index entries really do use them (a title naming Unity's `[CliCommand]`
+// attribute). A flat `[^\]]*` stops at the inner `]`, never reaches the `](`,
+// and silently drops the link — which surfaced as a false-positive orphan on
+// 2026-07-26, the first day this check ran.
+const MD_LINK = /\[(?:[^[\]]|\[[^[\]]*\])*\]\(([^)]+\.md)\)/g;
 
 // Git tracks the index as lowercase `index.md`; Windows' case-insensitive
 // filesystem hides the mismatch until cc-healer runs on a case-sensitive one

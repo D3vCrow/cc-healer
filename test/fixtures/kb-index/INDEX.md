@@ -8,6 +8,7 @@ Exercises every link form buildKnowledgeIndex has to normalize.
 - [Dot-slash prefixed](./research/2026-01-03-baz.md) — leading `./` must be stripped.
 - [Backslash separators](research\2026-01-04-qux.md) — Windows-style path must normalize.
 - [Root-level doc](project-status.md) — no directory segment.
+- [Nested brackets in the link text `[CliCommand]` interop](plans/2026-01-06-nested.md) — balanced inner brackets must not break the match.
 
 ## Not links
 A bare mention of research/2026-01-05-not-a-link.md must NOT count as indexed.

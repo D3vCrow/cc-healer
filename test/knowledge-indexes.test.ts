@@ -41,6 +41,14 @@ test('buildKnowledgeIndex: root-level link with no directory segment', async () 
   assert.equal(idx.indexed.has('project-status.md'), true);
 });
 
+test('buildKnowledgeIndex: link text with balanced inner brackets still matches', async () => {
+  // Regression: a flat [^\]]* stops at the inner `]`, drops the link, and the
+  // doc reads as orphaned. Observed live 2026-07-26 on a `[CliCommand]` title.
+  const idx = await buildKnowledgeIndex(KB_DIR);
+  assert.equal(idx.indexed.has('plans/2026-01-06-nested.md'), true);
+  assert.equal(idx.indexed.has('2026-01-06-nested.md'), true);
+});
+
 test('buildKnowledgeIndex: a bare mention is not a link and is not indexed', async () => {
   const idx = await buildKnowledgeIndex(KB_DIR);
   assert.equal(idx.indexed.has('research/2026-01-05-not-a-link.md'), false);

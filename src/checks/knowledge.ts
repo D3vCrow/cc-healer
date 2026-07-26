@@ -121,8 +121,8 @@ const INDEX_AND_LEDGER_FILES = new Set([
 /**
  * Every KB doc must be linked from INDEX.md. Unlinked → orphaned: the doc
  * exists on disk but no session that starts from the index can reach it.
- * Severity: warn (not error) while the pre-existing backlog burns down —
- * promote to 'error' once a clean run is reachable.
+ * Severity: error. Shipped at warn on 2026-07-26 with a 35-doc backlog;
+ * promoted the same day once the backlog hit zero and a clean run was real.
  */
 export const knowledgeIndexOrphan: Check = (ctx) => {
   if (!ctx.knowledgeIndex) return []; // not a knowledge-tier scan
@@ -141,7 +141,7 @@ export const knowledgeIndexOrphan: Check = (ctx) => {
 
   return [
     {
-      severity: 'warn',
+      severity: 'error',
       check: 'knowledge-index-orphan',
       file: ctx.file,
       message: `${ctx.file} is orphaned — no entry in INDEX.md, so a session that starts from the index cannot reach it`,

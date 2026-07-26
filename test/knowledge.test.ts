@@ -205,10 +205,10 @@ function orphanCtx(file: string, indexed?: string[]): CheckContext {
   };
 }
 
-test('knowledgeIndexOrphan: unindexed doc → 1 warn with knowledge-index-orphan', () => {
+test('knowledgeIndexOrphan: unindexed doc → 1 error with knowledge-index-orphan', () => {
   const issues = knowledgeIndexOrphan(orphanCtx('research/2026-01-01-foo.md', ['research/other.md']));
   assert.equal(issues.length, 1);
-  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.severity, 'error');
   assert.equal(issues[0]?.check, 'knowledge-index-orphan');
   assert.match(issues[0]?.message ?? '', /research\/2026-01-01-foo\.md/);
 });
