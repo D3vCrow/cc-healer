@@ -7,8 +7,15 @@ import { skillChecks, memoryChecks, knowledgeChecks } from './checks/index.js';
 import { scanSettings } from './checks/settings.js';
 import { pluginChecks, buildPluginIndex } from './checks/plugins.js';
 import { buildMemoryIndexes } from './memory-indexes.js';
+import { buildKnowledgeIndex } from './knowledge-indexes.js';
 import { proposeFixes, applyProposals } from './fix/index.js';
-import type { Check, CheckContext, MemoryIndexes, PluginIndex } from './checks/index.js';
+import type {
+  Check,
+  CheckContext,
+  KnowledgeIndex,
+  MemoryIndexes,
+  PluginIndex,
+} from './checks/index.js';
 import type { Issue, CheckReport } from './types.js';
 import type { FixResult } from './fix/index.js';
 
@@ -64,7 +71,7 @@ Usage:
 Tiers:
   skills    — Tier 1, ~/.claude/commands (9 checks live)
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (9 checks live)
-  knowledge — KB tier, <workspace>/knowledge recursive (2 checks live)
+  knowledge — KB tier, <workspace>/knowledge recursive (3 checks live)
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)
   plugins   — Tier 4, ~/.claude/plugins recursive (4 checks live)
 
@@ -82,6 +89,7 @@ type TierConfig = {
   recursive?: boolean;                  // walk sub-directories (default: flat, like memory/skills)
   extraFiles?: ReadonlySet<string>;     // non-.md basenames to also collect (plugins: installed_plugins.json)
   buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+  buildKnowledgeIndex?: (target: string) => Promise<KnowledgeIndex>;
   buildPluginIndex?: (target: string) => Promise<PluginIndex>;
   // Single-file tiers (settings) supply their own scan instead of the generic
   // .md-directory scanDir walk. When present, main() calls this and ignores `checks`.
@@ -119,6 +127,7 @@ function resolveTier(tier: string, workspaceRoot: string): TierConfig | null {
         // _TEMPLATE.md is a placeholder doc, not a real KB entry.
         skipDirs: new Set(['raw']),
         skipFiles: new Set(['_TEMPLATE.md']),
+        buildKnowledgeIndex,
       };
     case 'settings':
       return {
@@ -209,6 +218,7 @@ async function scanDir(
     recursive?: boolean;
     extraFiles?: ReadonlySet<string>;
     buildIndexes?: (target: string) => Promise<MemoryIndexes>;
+    buildKnowledgeIndex?: (target: string) => Promise<KnowledgeIndex>;
     buildPluginIndex?: (target: string) => Promise<PluginIndex>;
   },
 ): Promise<CheckReport> {
@@ -229,9 +239,12 @@ async function scanDir(
   });
 
   // Build cross-file indexes once per scan, before per-file checks. Each no-ops for
-  // tiers that don't supply the matching builder: memory → indexes, plugins →
-  // pluginIndex; skills / knowledge / settings supply neither.
+  // tiers that don't supply the matching builder: memory → indexes, knowledge →
+  // knowledgeIndex, plugins → pluginIndex; skills / settings supply none.
   const indexes = opts.buildIndexes ? await opts.buildIndexes(target) : undefined;
+  const knowledgeIndex = opts.buildKnowledgeIndex
+    ? await opts.buildKnowledgeIndex(target)
+    : undefined;
   const pluginIndex = opts.buildPluginIndex ? await opts.buildPluginIndex(target) : undefined;
 
   for (const { fullPath, relPath } of files) {
@@ -261,6 +274,7 @@ async function scanDir(
       cwd,
       workspaceRoot,
       indexes,
+      knowledgeIndex,
       pluginIndex,
     };
 
@@ -408,6 +422,7 @@ async function main(): Promise<number> {
         recursive: config.recursive,
         extraFiles: config.extraFiles,
         buildIndexes: config.buildIndexes,
+        buildKnowledgeIndex: config.buildKnowledgeIndex,
         buildPluginIndex: config.buildPluginIndex,
       });
 

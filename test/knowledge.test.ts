@@ -7,9 +7,10 @@ import { parseFrontmatter } from '../src/parser/frontmatter.ts';
 import {
   knowledgeVerifyByPast,
   knowledgeRefsResolve,
+  knowledgeIndexOrphan,
   knowledgeChecks,
 } from '../src/checks/knowledge.ts';
-import type { CheckContext } from '../src/checks/types.ts';
+import type { CheckContext, KnowledgeIndex } from '../src/checks/types.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // fixtures/fix mirrors a workspace root: it holds knowledge/research, knowledge/
@@ -183,8 +184,84 @@ test('knowledgeRefsResolve: broken-yaml → 0 issues (self-guarded)', async () =
   assert.deepEqual(await knowledgeRefsResolve(ctx), []);
 });
 
+// --- knowledge-index-orphan --------------------------------------------
+
+// The orphan check reads only ctx.file + ctx.knowledgeIndex, so a bare ctx is
+// enough; frontmatter is irrelevant to index reachability.
+function orphanCtx(file: string, indexed?: string[]): CheckContext {
+  const knowledgeIndex: KnowledgeIndex | undefined = indexed
+    ? { indexed: new Set(indexed) }
+    : undefined;
+  return {
+    file,
+    filePath: join(FIX_ROOT, 'knowledge', file),
+    parsed: parseFrontmatter('---\ntitle: T\n---\nbody'),
+    content: 'body',
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    workspaceRoot: FIX_ROOT,
+    knowledgeIndex,
+  };
+}
+
+test('knowledgeIndexOrphan: unindexed doc → 1 warn with knowledge-index-orphan', () => {
+  const issues = knowledgeIndexOrphan(orphanCtx('research/2026-01-01-foo.md', ['research/other.md']));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'knowledge-index-orphan');
+  assert.match(issues[0]?.message ?? '', /research\/2026-01-01-foo\.md/);
+});
+
+test('knowledgeIndexOrphan: path-form index entry matches → 0 issues', () => {
+  const ctx = orphanCtx('research/2026-01-01-foo.md', ['research/2026-01-01-foo.md']);
+  assert.deepEqual(knowledgeIndexOrphan(ctx), []);
+});
+
+test('knowledgeIndexOrphan: basename-form index entry matches → 0 issues', () => {
+  // The builder adds both forms; a bare basename must still satisfy the check.
+  const ctx = orphanCtx('research/2026-01-01-foo.md', ['2026-01-01-foo.md']);
+  assert.deepEqual(knowledgeIndexOrphan(ctx), []);
+});
+
+test('knowledgeIndexOrphan: backslash display path is normalized before matching → 0 issues', () => {
+  const ctx = orphanCtx('research\\2026-01-01-foo.md', ['research/2026-01-01-foo.md']);
+  assert.deepEqual(knowledgeIndexOrphan(ctx), []);
+});
+
+test('knowledgeIndexOrphan: non-entry dirs (tools/_inbox/dormant) never flag', () => {
+  for (const file of [
+    'tools/claude-map/vault/_HUB.md',
+    '_inbox/_scan-2026-07-18.md',
+    'dormant/2026-04-17-ai-interview-bot.md',
+  ]) {
+    assert.deepEqual(knowledgeIndexOrphan(orphanCtx(file, ['research/other.md'])), [], file);
+  }
+});
+
+test('knowledgeIndexOrphan: index + ledger files at root never flag', () => {
+  for (const file of ['INDEX.md', 'index.md', 'INDEX-headline.md', 'log.md', '_yours_log.md']) {
+    assert.deepEqual(knowledgeIndexOrphan(orphanCtx(file, ['research/other.md'])), [], file);
+  }
+});
+
+test('knowledgeIndexOrphan: unindexed root-level doc that is NOT a ledger still flags', () => {
+  const issues = knowledgeIndexOrphan(orphanCtx('project-status.md', ['research/other.md']));
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.check, 'knowledge-index-orphan');
+});
+
+test('knowledgeIndexOrphan: no knowledgeIndex → 0 issues (self-guarded, non-KB scan)', () => {
+  assert.deepEqual(knowledgeIndexOrphan(orphanCtx('research/2026-01-01-foo.md')), []);
+});
+
+test('knowledgeIndexOrphan: empty index → 0 issues (self-guarded, no INDEX.md present)', () => {
+  // An absent INDEX.md must not turn every KB doc into a finding.
+  assert.deepEqual(knowledgeIndexOrphan(orphanCtx('research/2026-01-01-foo.md', [])), []);
+});
+
 // --- registry ----------------------------------------------------------
 
-test('knowledgeChecks registry contains both checks', () => {
-  assert.equal(knowledgeChecks.length, 2);
+test('knowledgeChecks registry contains all three checks', () => {
+  assert.equal(knowledgeChecks.length, 3);
 });

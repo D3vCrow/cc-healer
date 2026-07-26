@@ -16,9 +16,10 @@
 //     knowledgeRefCandidates probes all of those roots so a naive port doesn't
 //     false-positive flood and bury the genuinely-broken refs.
 //
-// No required-fields / type / source-shape / index-parity checks here — those
-// encode Rook-memory contracts the KB doesn't share. Phase 1B scope is the two
-// staleness/integrity gates only.
+// No required-fields / type / source-shape checks here — those encode Rook-memory
+// contracts the KB doesn't share. Index reachability IS shared, though in a
+// one-index form (INDEX.md) rather than memory's two-tier parity: see
+// knowledgeIndexOrphan at the bottom of this file.
 
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -87,7 +88,69 @@ export const knowledgeVerifyByPast: Check = (ctx) =>
 export const knowledgeRefsResolve: Check = (ctx) =>
   checkRefsResolve(ctx, 'knowledge-refs-resolve', knowledgeRefCandidates);
 
+// --- Cross-file check: index reachability -------------------------------
+//
+// Consumes CheckContext.knowledgeIndex, populated once per scan by
+// buildKnowledgeIndex (src/knowledge-indexes.ts). Self-skips when the index is
+// absent (non-KB scan) or empty (no INDEX.md at the target), mirroring the
+// memory-tier cross-file guards.
+//
+// Ported from mattpocock/dictionary-of-ai-coding's generate-readme.ts orphan
+// gate: every dictionary/*.md must be referenced by Curriculum.md or the build
+// fails. Same contract here, one tier up — INDEX.md is what a session reads
+// first, so a doc missing from it is a doc Claude will never find.
+// Vet: knowledge/research/2026-07-26-vet-dictionary-of-ai-coding.md
+
+// Subtrees that hold non-entry files and are indexed by convention: no.
+//   tools/   — generated Obsidian vault (claude-map); 125 files, 0 indexed
+//   _inbox/  — auto-extracted fragments awaiting weekly review
+//   dormant/ — parked items; the dormant sweep owns them, not INDEX.md
+// Scoped to this check only — the staleness/ref checks still run everywhere.
+const NON_ENTRY_DIRS = new Set(['tools', '_inbox', 'dormant']);
+
+// Root-level index + append-only ledger files. These ARE the index / the log,
+// so they are never index entries themselves.
+const INDEX_AND_LEDGER_FILES = new Set([
+  'INDEX.md',
+  'index.md',
+  'INDEX-headline.md',
+  'log.md',
+  '_yours_log.md',
+]);
+
+/**
+ * Every KB doc must be linked from INDEX.md. Unlinked → orphaned: the doc
+ * exists on disk but no session that starts from the index can reach it.
+ * Severity: warn (not error) while the pre-existing backlog burns down —
+ * promote to 'error' once a clean run is reachable.
+ */
+export const knowledgeIndexOrphan: Check = (ctx) => {
+  if (!ctx.knowledgeIndex) return []; // not a knowledge-tier scan
+  if (ctx.knowledgeIndex.indexed.size === 0) return []; // no INDEX.md present
+
+  const rel = ctx.file.replace(/\\/g, '/');
+  const firstSlash = rel.indexOf('/');
+  if (firstSlash === -1) {
+    if (INDEX_AND_LEDGER_FILES.has(rel)) return [];
+  } else if (NON_ENTRY_DIRS.has(rel.slice(0, firstSlash))) {
+    return [];
+  }
+
+  const base = rel.slice(rel.lastIndexOf('/') + 1);
+  if (ctx.knowledgeIndex.indexed.has(rel) || ctx.knowledgeIndex.indexed.has(base)) return [];
+
+  return [
+    {
+      severity: 'warn',
+      check: 'knowledge-index-orphan',
+      file: ctx.file,
+      message: `${ctx.file} is orphaned — no entry in INDEX.md, so a session that starts from the index cannot reach it`,
+    },
+  ];
+};
+
 export const knowledgeChecks: ReadonlyArray<Check> = [
   knowledgeVerifyByPast,
   knowledgeRefsResolve,
+  knowledgeIndexOrphan,
 ];

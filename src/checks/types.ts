@@ -17,6 +17,18 @@ export interface MemoryIndexes {
 }
 
 /**
+ * Knowledge-base tier index. Built once per scan from the KB's INDEX.md.
+ * Cross-file checks read this to answer "is this doc linked from the index?".
+ *
+ * The set holds both knowledge-root-relative paths (`research/foo.md`) and bare
+ * basenames (`foo.md`), so a match succeeds whichever form the index entry used.
+ * Absent for non-knowledge tier scans.
+ */
+export interface KnowledgeIndex {
+  indexed: Set<string>; // paths + basenames linked from INDEX.md
+}
+
+/**
  * Plugin-tier index. Built once per scan from `~/.claude/plugins/installed_plugins.json`.
  * Cross-file checks read this to answer "is plugin <id> installed?".
  *
@@ -38,6 +50,7 @@ export interface CheckContext {
   cwd: string;                                   // process.cwd() in production; used by fileRefsResolve as one of two roots
   workspaceRoot: string;                           // workspace root in production; second root for fileRefsResolve
   indexes?: MemoryIndexes;                       // cross-file index for memory tier; undefined for skill-tier scans
+  knowledgeIndex?: KnowledgeIndex;               // cross-file index for knowledge tier; undefined for other tiers
   pluginIndex?: PluginIndex;                     // cross-file index for plugin tier; undefined when not plumbed
 }
 
