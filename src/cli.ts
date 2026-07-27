@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { parseFrontmatter } from './parser/frontmatter.js';
+import { scrub } from './sanitize.js';
 import { skillChecks, memoryChecks, knowledgeChecks } from './checks/index.js';
 import { scanSettings } from './checks/settings.js';
 import { pluginChecks, buildPluginIndex } from './checks/plugins.js';
@@ -307,17 +308,20 @@ function printReport(target: string, report: CheckReport): void {
   const warns = report.issues.filter((i) => i.severity === 'warn');
   const info = report.issues.filter((i) => i.severity === 'info');
 
+  // scrub() at the render boundary — issue fields interpolate untrusted file
+  // content (see src/sanitize.ts). Scrub before pad so column width is visible width.
+  const line = (i: Issue): string => `  ${pad(scrub(i.file), 28)} ${scrub(i.check)}: ${scrub(i.message)}`;
   if (errors.length > 0) {
     log(`\n✖ ERRORS (${errors.length})`);
-    for (const i of errors) log(`  ${pad(i.file, 28)} ${i.check}: ${i.message}`);
+    for (const i of errors) log(line(i));
   }
   if (warns.length > 0) {
     log(`\n⚠ WARNINGS (${warns.length})`);
-    for (const i of warns) log(`  ${pad(i.file, 28)} ${i.check}: ${i.message}`);
+    for (const i of warns) log(line(i));
   }
   if (info.length > 0) {
     log(`\nℹ INFO (${info.length})`);
-    for (const i of info) log(`  ${pad(i.file, 28)} ${i.check}: ${i.message}`);
+    for (const i of info) log(line(i));
   }
   if (report.scanned > 0 && errors.length + warns.length + info.length === 0) {
     log(`\n✓ CLEAN (no issues detected by V0 checks)`);
@@ -337,17 +341,19 @@ function printFixReport(result: FixResult, wrote: boolean): void {
       ? `\n✎ APPLIED (${proposals.length})`
       : `\n✎ PROPOSALS (${proposals.length}) — propose-only; re-run with --write to apply`;
     log(head);
+    // Display-only scrub (see src/sanitize.ts) — applyProposals still receives the
+    // raw oldText/newText, which must byte-match the file to patch it.
     for (const p of proposals) {
-      log(`  ${p.file}  [${p.field}]`);
-      log(`    - ${p.oldText}`);
-      log(`    + ${p.newText}`);
+      log(`  ${scrub(p.file)}  [${scrub(p.field)}]`);
+      log(`    - ${scrub(p.oldText)}`);
+      log(`    + ${scrub(p.newText)}`);
     }
   }
   if (unfixable.length > 0) {
     log(`\n● NEEDS HUMAN (${unfixable.length}) — cannot auto-resolve`);
     for (const u of unfixable) {
-      log(`  ${pad(u.file, 40)} ${u.detail}`);
-      log(`    ↳ ${u.reason}`);
+      log(`  ${pad(scrub(u.file), 40)} ${scrub(u.detail)}`);
+      log(`    ↳ ${scrub(u.reason)}`);
     }
   }
   if (proposals.length === 0 && unfixable.length === 0) {
@@ -471,7 +477,8 @@ main()
   })
   .catch((err) => {
     // eslint-disable-next-line no-console
-    console.error(`cc-healer: fatal — ${err instanceof Error ? err.message : String(err)}`);
+    // Parser/fs errors can quote bytes from the file that failed — scrub them too.
+    console.error(`cc-healer: fatal — ${scrub(err instanceof Error ? err.message : String(err))}`);
     process.exit(2);
   });
 
