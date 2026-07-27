@@ -25,6 +25,10 @@ jobs:
       # 2025). The trailing `# ratchet:` comment keeps the human-readable version
       # and lets sethvargo/ratchet re-resolve on upgrade.
       #
+      # If this repo grows a publish/release workflow, carry the same pinning
+      # convention and add: `npm publish --provenance --access public` plus
+      # GPG-signed release commits/tags (vercel-labs/skills publish.yml pattern).
+      #
       # v5 targets node24. v4 targeted node20, which GitHub deprecated and was
       # force-running on node24 anyway - every job logged a deprecation warning.
       # This is the action's own runtime and is unrelated to the `node:` matrix
