@@ -33,7 +33,16 @@ jobs:
       # force-running on node24 anyway - every job logged a deprecation warning.
       # This is the action's own runtime and is unrelated to the `node:` matrix
       # below, which is the Node version cc-healer itself is tested against.
+      # persist-credentials: false — checkout otherwise leaves the job's token in
+      # .git/config for every later step to read. This job only runs `npm ci` and
+      # `npm test`, so nothing needs it. Defence in depth: the token is already
+      # read-only via the `permissions:` block above, so this closes the smaller
+      # "a compromised dependency reads the token from the working tree" path
+      # rather than a write path. (Pattern seen in nanonets/graft's workflows;
+      # vet: F:/DevCrow/Dev/knowledge/research/2026-08-10-vet-graft.md)
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # ratchet:actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
