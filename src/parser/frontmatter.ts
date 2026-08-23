@@ -12,6 +12,11 @@
 //     - item-a
 //     - item-b
 //
+//   key: [a, b,                  (flow array wrapped over several physical lines,
+//         c, d]                   either continuing after the key or opening on
+//   key:                          the line below it — folded to one logical line
+//     [a, b, c]                   before parsing)
+//
 // NOT a general YAML parser. Specifically does NOT support:
 //   - block scalars (| or >)
 //   - anchors / aliases / tags
@@ -82,6 +87,84 @@ function parseFlowArray(raw: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+// Bracket depth of a line, counting only brackets outside quoted spans. A `[` inside
+// a title string ("Vet: foo [bar]") must not open a fold.
+function bracketDelta(line: string): number {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '#') break; // trailing comment
+    else if (ch === '[') depth++;
+    else if (ch === ']') depth--;
+  }
+  return depth;
+}
+
+type LogicalLine = { text: string; lineNo: number };
+
+// Fold a flow array that spans physical lines into one logical line, so the
+// line-oriented parser below sees the `key: [a, b, c]` shape it already handles.
+// Two shapes fold: the array opening on the key's own line, and the array opening
+// on the line after a bare `key:`. An array that never closes is left untouched,
+// so the existing error path still reports it.
+function foldFlowSequences(lines: string[]): LogicalLine[] {
+  const out: LogicalLine[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const trimmed = line.trim();
+    const colonIdx = trimmed.indexOf(':');
+    const value = colonIdx === -1 ? '' : trimmed.slice(colonIdx + 1).trim();
+
+    // Shape 2: bare `key:` whose array opens on the next non-blank line.
+    let startIdx = i;
+    let parts = [line];
+    let openedBelow = false;
+    if (colonIdx !== -1 && value === '') {
+      let j = i + 1;
+      while (j < lines.length && (lines[j] ?? '').trim() === '') j++;
+      const next = (lines[j] ?? '').trim();
+      if (next.startsWith('[')) {
+        parts = [line.replace(/\s*$/, ''), ...lines.slice(i + 1, j + 1)];
+        startIdx = j;
+        openedBelow = true;
+      }
+    }
+
+    let depth = parts.reduce((d, p) => d + bracketDelta(p), 0);
+    // Nothing to fold: a self-contained line, or a non-key line we must not touch.
+    if ((depth <= 0 && !openedBelow) || (colonIdx === -1 && !openedBelow)) {
+      out.push({ text: line, lineNo: i + 1 });
+      continue;
+    }
+
+    // Consume following lines until the brackets balance.
+    let j = startIdx;
+    while (depth > 0 && j + 1 < lines.length) {
+      j++;
+      parts.push(lines[j] ?? '');
+      depth += bracketDelta(lines[j] ?? '');
+    }
+    if (depth > 0) {
+      out.push({ text: line, lineNo: i + 1 }); // unterminated — leave it to the error path
+      continue;
+    }
+
+    const indent = line.match(/^\s*/)?.[0] ?? '';
+    const folded = parts.map((p) => p.trim()).filter((p) => p !== '').join(' ');
+    out.push({ text: indent + folded, lineNo: i + 1 });
+    i = j;
+  }
+
+  return out;
+}
+
 export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
   const errors: string[] = [];
   const root: Record<string, unknown> = {};
@@ -97,11 +180,14 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
   };
   const stack: Frame[] = [{ indent: -1, container: root }];
 
-  const lines = yaml.split(/\r?\n/);
+  const lines = foldFlowSequences(yaml.split(/\r?\n/));
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const rawLine = lines[lineIdx];
-    if (rawLine === undefined) continue;
+    const entry = lines[lineIdx];
+    if (entry === undefined) continue;
+    const rawLine = entry.text;
+    // Errors quote the physical line the fold started on, not the folded index.
+    const lineNo = entry.lineNo;
     if (rawLine.trim() === '' || rawLine.trim().startsWith('#')) continue;
 
     const indentMatch = rawLine.match(/^\s*/);
@@ -119,7 +205,7 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
       }
       const top = stack[stack.length - 1];
       if (!top || top.key === undefined || top.parent === undefined) {
-        errors.push(`line ${lineIdx + 1}: sequence item has no parent key`);
+        errors.push(`line ${lineNo}: sequence item has no parent key`);
         continue;
       }
       if (!top.list) {
@@ -142,7 +228,7 @@ export function parseSimpleYAML(yaml: string): FrontmatterParseResult {
 
     const colonIdx = trimmed.indexOf(':');
     if (colonIdx === -1) {
-      errors.push(`line ${lineIdx + 1}: missing colon`);
+      errors.push(`line ${lineNo}: missing colon`);
       continue;
     }
 
