@@ -5,13 +5,16 @@
 // shape: { name, description, type, source, verify_by, [supersedes, superseded_by,
 // related] }.
 //
-// Phase 1 complete — 9 Tier 2 checks live:
+// Phase 1 complete — 10 Tier 2 checks live:
 //   - 6 within-file: required-fields, type-known, source-shape,
 //     verify-by-shape, verify-by-past, refs-resolve.
 //   - 2 cross-file: index-parity, feedback-in-hot-tier (both consume
 //     CheckContext.indexes built once per scan by buildMemoryIndexes).
 //   - 1 hot-tier shape: hot-tier-entry-shape (MEMORY.md-only line-length gate
 //     per docs/superpowers/specs/2026-05-17-memory-index-trim-and-gate-design.md §4).
+//   - 1 hot-tier boundary: injection-guard (MEMORY.md-only; pins the
+//     data-not-instructions framing on always-loaded text, per
+//     research/2026-08-26-vet-claude-handoff.md).
 
 import { isAbsolute, join } from 'node:path';
 
@@ -306,6 +309,40 @@ export const memoryHotTierEntryShape: Check = (ctx) => {
   return issues;
 };
 
+// Accepts any reasonable wording of the boundary ("data, not instructions",
+// "not user instructions", "not commands", "not directives") so a rewrite
+// still passes; only deleting the boundary outright fails.
+const INJECTION_GUARD_SHAPE = /\bnot\s+(?:user\s+|your\s+|my\s+)?(?:instructions|commands|directives)\b/i;
+
+/**
+ * MEMORY.md (hot tier, injected into every session) must state that its
+ * contents are background data rather than instructions to follow.
+ * Severity: error — this is the instruction-source boundary on always-loaded
+ * text, not a style preference. Memory is written by past sessions that read
+ * web pages, files and tool output, so an attacker-authored line can reach
+ * this file and arrive in the next session's context wearing trusted framing.
+ * Without the boundary stated in-file, nothing versioned says it is data.
+ * Fires only on MEMORY.md; DEEP-INDEX.md is lazy-loaded and carries the hot
+ * tier's framing by reference.
+ * Source: research/2026-08-26-vet-claude-handoff.md — lifted from
+ * claude-handoff's InjectionDefenseTests (tests/test_basic.py:1634-1674),
+ * which pins the same phrase in every prompt that consumes untrusted text.
+ */
+export const memoryInjectionGuard: Check = (ctx) => {
+  if (ctx.file !== 'MEMORY.md') return [];
+  if (INJECTION_GUARD_SHAPE.test(ctx.content)) return [];
+  return [
+    {
+      severity: 'error',
+      check: 'memory-injection-guard',
+      file: ctx.file,
+      message:
+        'hot-tier memory states no data-not-instructions boundary — add a line marking ' +
+        'these entries as background context, not commands to follow',
+    },
+  ];
+};
+
 // --- Registry -----------------------------------------------------------
 
 export const memoryChecks: ReadonlyArray<Check> = [
@@ -318,4 +355,5 @@ export const memoryChecks: ReadonlyArray<Check> = [
   memoryIndexParity,
   memoryFeedbackInHotTier,
   memoryHotTierEntryShape,
+  memoryInjectionGuard,
 ];

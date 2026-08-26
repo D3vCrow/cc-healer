@@ -71,7 +71,7 @@ Usage:
 
 Tiers:
   skills    — Tier 1, ~/.claude/commands (9 checks live)
-  memory    — Tier 2, ~/.claude/projects/<slug>/memory (9 checks live)
+  memory    — Tier 2, ~/.claude/projects/<slug>/memory (10 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (3 checks live)
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)
   plugins   — Tier 4, ~/.claude/plugins recursive (4 checks live)

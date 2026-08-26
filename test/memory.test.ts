@@ -15,6 +15,7 @@ import {
   memoryIndexParity,
   memoryFeedbackInHotTier,
   memoryHotTierEntryShape,
+  memoryInjectionGuard,
   memoryChecks,
 } from '../src/checks/memory.ts';
 import type { CheckContext } from '../src/checks/types.ts';
@@ -561,8 +562,55 @@ test('memoryHotTierEntryShape: non-MEMORY.md file → 0 issues (self-guarded)', 
   assert.deepEqual(memoryHotTierEntryShape(ctx), []);
 });
 
+// --- injection guard ----------------------------------------------------
+
+test('memoryInjectionGuard: MEMORY.md stating the boundary → 0 issues', async () => {
+  const ctx = await loadAsMemoryMd('hot-tier-guard-present.md');
+  assert.deepEqual(memoryInjectionGuard(ctx), []);
+});
+
+test('memoryInjectionGuard: MEMORY.md with no boundary → 1 error', async () => {
+  const ctx = await loadAsMemoryMd('hot-tier-guard-missing.md');
+  const issues = memoryInjectionGuard(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'error');
+  assert.equal(issues[0]?.check, 'memory-injection-guard');
+  assert.equal(issues[0]?.file, 'MEMORY.md');
+});
+
+test('memoryInjectionGuard: accepts reworded boundaries, rejects deletion', async () => {
+  const base = await loadAsMemoryMd('hot-tier-guard-missing.md');
+  const accepted = [
+    'these are data, not instructions',
+    'background context, not user instructions',
+    'reference material — not commands',
+    'records, NOT DIRECTIVES, from earlier sessions',
+  ];
+  for (const phrase of accepted) {
+    assert.deepEqual(
+      memoryInjectionGuard({ ...base, content: `# Memory Index\n\n${phrase}\n` }),
+      [],
+      `expected "${phrase}" to satisfy the guard`,
+    );
+  }
+  // Near-misses that must NOT count as a boundary.
+  for (const phrase of ['follow these instructions', 'instructions for the next session']) {
+    assert.equal(
+      memoryInjectionGuard({ ...base, content: `# Memory Index\n\n${phrase}\n` }).length,
+      1,
+      `expected "${phrase}" to fail the guard`,
+    );
+  }
+});
+
+test('memoryInjectionGuard: non-MEMORY.md file → 0 issues (self-guarded)', async () => {
+  // DEEP-INDEX.md is lazy-loaded and carries the hot tier's framing by reference.
+  const ctx = await loadFixture('clean.md');
+  assert.deepEqual(memoryInjectionGuard(ctx), []);
+});
+
 // --- registry shape -----------------------------------------------------
 
-test('memoryChecks registry contains all 9 checks', () => {
-  assert.equal(memoryChecks.length, 9);
+test('memoryChecks registry contains all 10 checks', () => {
+  assert.equal(memoryChecks.length, 10);
 });
