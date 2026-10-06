@@ -3,7 +3,7 @@
 // Implements §"Tier 2: memory files" of docs/cc-healer-v1-spec.md. Operates on
 // Rook v2 memory files (~/.claude/projects/<slug>/memory/) which have frontmatter
 // shape: { name, description, type, source, verify_by, [supersedes, superseded_by,
-// related] }.
+// related, trigger] }.
 //
 // Phase 1 complete — 10 Tier 2 checks live:
 //   - 6 within-file: required-fields, type-known, source-shape,
@@ -234,11 +234,48 @@ export const memoryIndexParity: Check = (ctx) => {
   return [];
 };
 
+// A `trigger:` value that lets a feedback rule leave the hot index: it names
+// where the rule's text reaches the session instead of the always-loaded line.
+//   skill:<name>   the cue sits in that skill's own text
+//   hook:<name>    a hook enforces or prints it
+//   loaded:<file>  an always-loaded file already states it
+// Anything else (for example `any-session`) means the rule still needs its
+// MEMORY.md line.
+const DEEP_FEEDBACK_TRIGGER = /^(skill|hook|loaded):\S/;
+
+// Read a frontmatter value at the top level or one level down under
+// `metadata:`. Some writers nest every key they do not know under `metadata:`,
+// so a field can sit at either depth in an otherwise valid file.
+function frontmatterValue(data: Record<string, unknown>, key: string): unknown {
+  const top = data[key];
+  if (top !== undefined && top !== null && top !== '') return top;
+  const meta = data.metadata;
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    const nested = (meta as Record<string, unknown>)[key];
+    if (nested !== undefined && nested !== null && nested !== '') return nested;
+  }
+  return undefined;
+}
+
+function hasValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  return false;
+}
+
 /**
- * Files with `type: feedback` should appear only in MEMORY.md (hot tier),
- * never DEEP-INDEX.md. Behavior rule: feedback never demotes to deep.
+ * A `type: feedback` file belongs in MEMORY.md (hot tier) unless something
+ * else carries its text into the session. Linked from DEEP-INDEX.md it passes
+ * in two cases only:
+ *   - `superseded_by:` is set: a retired rule, kept in the deep index as
+ *     history; or
+ *   - `trigger:` names the carrier (`skill:<name>`, `hook:<name>`,
+ *     `loaded:<file>`).
+ * A feedback rule in the deep index with neither is the silent failure this
+ * check exists for: the rule stops reaching sessions and nothing reports it.
  * Severity: warn.
- * Source: cc-healer V1 spec Tier 2 row "feedback type appears only in MEMORY.md".
+ * Source: cc-healer V1 spec Tier 2 row "feedback type appears only in
+ * MEMORY.md"; the carrier exemption was added 2026-10-06.
  */
 export const memoryFeedbackInHotTier: Check = (ctx) => {
   if (!ctx.indexes) return []; // not a memory-tier scan
@@ -247,17 +284,22 @@ export const memoryFeedbackInHotTier: Check = (ctx) => {
   if (Object.keys(ctx.parsed.data).length === 0) return [];
   const type = ctx.parsed.data.type;
   if (type !== 'feedback') return [];
-  if (ctx.indexes.deep.has(ctx.file)) {
-    return [
-      {
-        severity: 'warn',
-        check: 'memory-feedback-in-hot-tier',
-        file: ctx.file,
-        message: `feedback-type entries should appear only in MEMORY.md, but ${ctx.file} is linked from DEEP-INDEX.md`,
-      },
-    ];
-  }
-  return [];
+  if (!ctx.indexes.deep.has(ctx.file)) return [];
+  if (hasValue(frontmatterValue(ctx.parsed.data, 'superseded_by'))) return [];
+  const trigger = frontmatterValue(ctx.parsed.data, 'trigger');
+  if (typeof trigger === 'string' && DEEP_FEEDBACK_TRIGGER.test(trigger.trim())) return [];
+  const why =
+    typeof trigger === 'string' && trigger.trim() !== ''
+      ? `its \`trigger: ${trigger.trim()}\` names no carrier`
+      : 'it has no `trigger:` naming a carrier';
+  return [
+    {
+      severity: 'warn',
+      check: 'memory-feedback-in-hot-tier',
+      file: ctx.file,
+      message: `feedback-type entries belong in MEMORY.md unless a carrier is named: ${ctx.file} is linked from DEEP-INDEX.md and ${why} (skill:<name>, hook:<name> or loaded:<file>)`,
+    },
+  ];
 };
 
 // --- Hot-tier shape check (Phase 1 step 5) ------------------------------

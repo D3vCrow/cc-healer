@@ -521,6 +521,65 @@ test('memoryFeedbackInHotTier: broken-yaml → 0 issues (self-guarded)', async (
   assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
 });
 
+// The carrier exemption: a feedback rule may sit in DEEP-INDEX.md when its
+// frontmatter names what carries its text into the session.
+
+test('memoryFeedbackInHotTier: feedback in DEEP-INDEX with trigger skill:<name> → 0 issues', async () => {
+  const ctx = await loadWithIndexes('feedback-trigger-skill.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-trigger-skill.md']),
+  });
+  assert.equal(ctx.parsed.data.trigger, 'skill:example-skill'); // the fixture is read, quotes stripped
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: trigger nested under metadata: → 0 issues', async () => {
+  const ctx = await loadWithIndexes('feedback-trigger-nested.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-trigger-nested.md']),
+  });
+  assert.equal(ctx.parsed.data.trigger, undefined); // not at the top level in this fixture
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: trigger any-session in DEEP-INDEX → 1 warn naming the trigger', async () => {
+  const ctx = await loadWithIndexes('feedback-trigger-any-session.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-trigger-any-session.md']),
+  });
+  const issues = memoryFeedbackInHotTier(ctx);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.match(issues[0]?.message ?? '', /trigger: any-session/);
+  assert.match(issues[0]?.message ?? '', /MEMORY\.md/);
+});
+
+test('memoryFeedbackInHotTier: no trigger in DEEP-INDEX → the warn says a trigger is missing', async () => {
+  const ctx = await loadWithIndexes('feedback-clean.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-clean.md']),
+  });
+  const issues = memoryFeedbackInHotTier(ctx);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.message ?? '', /no `trigger:`/);
+});
+
+test('memoryFeedbackInHotTier: superseded feedback in DEEP-INDEX → 0 issues (history)', async () => {
+  const ctx = await loadWithIndexes('feedback-superseded.md', {
+    hot: new Set(['something_else.md']),
+    deep: new Set(['feedback-superseded.md']),
+  });
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
+test('memoryFeedbackInHotTier: a trigger does not move a hot feedback file anywhere → 0 issues', async () => {
+  const ctx = await loadWithIndexes('feedback-trigger-any-session.md', {
+    hot: new Set(['feedback-trigger-any-session.md']),
+    deep: new Set(['something_else.md']),
+  });
+  assert.deepEqual(memoryFeedbackInHotTier(ctx), []);
+});
+
 // --- memory-hot-tier-entry-shape (impl) --------------------------------
 //
 // Filename-gated: fires only on MEMORY.md. We override ctx.file via spread
