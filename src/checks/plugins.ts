@@ -25,6 +25,7 @@ import { dirname, isAbsolute, join, basename } from 'node:path';
 
 import type { Issue } from '../types.js';
 import type { Check, CheckContext, PluginIndex } from './types.js';
+import { isNetworkPath } from './common.js';
 
 const SKILL_REQUIRED_FIELDS = ['description'] as const;
 
@@ -307,6 +308,19 @@ export const pluginSymlinksResolve: Check = async (ctx) => {
   }
 
   const absoluteTarget = isAbsolute(target) ? target : join(dirname(ctx.filePath), target);
+
+  // A plugin is someone else's content. Never follow its link to a network
+  // share (see isNetworkPath): the stat and the read below would both go there.
+  if (isNetworkPath(target) || isNetworkPath(absoluteTarget)) {
+    return [
+      {
+        severity: 'error',
+        check: 'plugin-symlinks-resolve',
+        file: ctx.file,
+        message: `symlink target is a network or device path; not followed: ${target}`,
+      },
+    ];
+  }
 
   let targetStat;
   try {

@@ -380,6 +380,21 @@ test('fileRefsResolve: refs deduplicate (backtick-wrapped duplicate of valid pat
   assert.equal(issues.length, 1);
 });
 
+test('fileRefsResolve: network-share refs → 2 warns, reported and never probed', async () => {
+  // body-with-network-refs.md names one share with backslashes (twice, deduped)
+  // and one with forward slashes. Probing either would open a connection to a
+  // host the scanned file chose.
+  const ctx = await loadFixture('body-with-network-refs.md');
+  const issues = await fileRefsResolve(ctx);
+  assert.equal(issues.length, 2);
+  for (const issue of issues) {
+    assert.equal(issue.severity, 'warn');
+    assert.equal(issue.check, 'file-refs-resolve');
+    assert.match(issue.message, /network or device path; not probed/);
+    assert.doesNotMatch(issue.message, /does not exist/);
+  }
+});
+
 // --- Phase 1 stubs: registry sanity ------------------------------------
 // (No remaining stubs — all 9 checks are implemented.)
 

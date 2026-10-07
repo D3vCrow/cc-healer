@@ -17,6 +17,7 @@ import { access } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
+import { isNetworkPath } from './common.js';
 
 const execAsync = promisify(exec);
 
@@ -186,6 +187,16 @@ export const fileRefsResolve: Check = async (ctx) => {
     const path = raw.replace(/^`+|`+$/g, '');
     if (!path || seen.has(path)) continue;
     seen.add(path);
+    // Never probe a network share named by the scanned file (see isNetworkPath).
+    if (isNetworkPath(path)) {
+      issues.push({
+        severity: 'warn',
+        check: 'file-refs-resolve',
+        file: ctx.file,
+        message: `body ref '${path}' is a network or device path; not probed`,
+      });
+      continue;
+    }
     const candidates = isAbsolute(path)
       ? [path]
       : [join(ctx.cwd, path), join(ctx.workspaceRoot, path)];
