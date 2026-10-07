@@ -288,6 +288,42 @@ test('pluginSymlinksResolve: dangling symlink (target does not exist) → 1 erro
   }
 });
 
+test('pluginSymlinksResolve: symlink to a network share → 1 error, target never followed', async (t) => {
+  const cap = await canCreateSymlinks();
+  if (!cap.ok) {
+    t.skip(`symlink creation unavailable (${cap.reason ?? 'unknown'})`);
+    return;
+  }
+  const scratch = join(tmpdir(), `cc-healer-test-symlinks-${process.pid}-${Date.now()}`);
+  await mkdir(scratch, { recursive: true });
+  // `.invalid` is a reserved TLD (RFC 2606): the host can never resolve.
+  const remoteTarget =
+    process.platform === 'win32'
+      ? String.raw`\\cc-healer-test.invalid\share\skill.md`
+      : '//cc-healer-test.invalid/share/skill.md';
+  const linkPath = join(scratch, 'remote.md');
+  try {
+    await symlink(remoteTarget, linkPath, 'file');
+    const ctx: CheckContext = {
+      file: 'remote.md',
+      filePath: linkPath,
+      parsed: { ok: true, data: {}, errors: [], body: '' },
+      content: '',
+      today: TEST_TODAY,
+      env: TEST_ENV,
+      cwd: TEST_CWD,
+      workspaceRoot: TEST_WORKSPACE_ROOT,
+    };
+    const issues = await pluginSymlinksResolve(ctx);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.severity, 'error');
+    assert.equal(issues[0]?.check, 'plugin-symlinks-resolve');
+    assert.match(issues[0]?.message ?? '', /network or device path; not followed/);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test('pluginSymlinksResolve: symlink to empty file → 1 error', async (t) => {
   const cap = await canCreateSymlinks();
   if (!cap.ok) {

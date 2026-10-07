@@ -46,6 +46,21 @@ export function checkVerifyByPast(ctx: CheckContext, checkName: string): Issue[]
 }
 
 /**
+ * True when a path names a network share or a device namespace instead of a
+ * local file: `\\server\share\a.md`, `//server/share/a.md`, `\\?\…`, `\\.\…`.
+ *
+ * A check must never probe such a path when it came out of a scanned file. On
+ * Windows the probe itself (`access`, `stat`, `readFile`) opens a connection to
+ * a host the scanned text chose, and that connection offers the user's login.
+ * The test is the same on every OS so the three CI systems agree; on POSIX it
+ * costs one unprobed `//double-slash` path, which reads as "not probed" rather
+ * than passing silently.
+ */
+export function isNetworkPath(p: string): boolean {
+  return /^[\\/]{2}/.test(p);
+}
+
+/**
  * Given a ref string and the scanned file's own directory, return the candidate
  * absolute paths to probe. The ref resolves if ANY candidate exists. Tiers
  * differ only in their roots: memory probes sibling + workspace; knowledge also
@@ -81,7 +96,19 @@ export async function checkRefsResolve(
     const refs = Array.isArray(value) ? value : [value];
     for (const ref of refs) {
       if (typeof ref !== 'string' || ref.length === 0) continue;
-      const candidates = resolveCandidates(ref, dir, ctx);
+      const allCandidates = resolveCandidates(ref, dir, ctx);
+      // Network candidates are dropped before any probe (see isNetworkPath). A
+      // ref with nothing else left is reported as unprobed, not as missing.
+      const candidates = allCandidates.filter((c) => !isNetworkPath(c));
+      if (candidates.length === 0 && allCandidates.length > 0) {
+        issues.push({
+          severity: 'warn',
+          check: checkName,
+          file: ctx.file,
+          message: `${key} references a network or device path; not probed: ${ref}`,
+        });
+        continue;
+      }
       let resolved = false;
       for (const candidate of candidates) {
         try {

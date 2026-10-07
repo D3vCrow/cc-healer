@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -340,6 +341,37 @@ test('declaredBinaryResolvable: devcrow-bin-required (2 bogus bins) → 2 warns'
   assert.equal(issues.every((i) => i.check === 'declared-binary-resolvable'), true);
 });
 
+test('declaredBinaryResolvable: an entry with shell syntax → warn, never run', async () => {
+  // A scanned file is someone else's text. The first entry would write a marker
+  // file if it ever reached a shell; the second would read as an option.
+  const scratch = await mkdtemp(join(tmpdir(), 'cc-healer-test-binname-'));
+  const marker = join(scratch, 'EXECUTED.txt');
+  const hostile =
+    process.platform === 'win32' ? `node & echo ran> "${marker}"` : `node; echo ran > '${marker}'`;
+  try {
+    const base = await loadFixture('clean.md');
+    const ctx: CheckContext = {
+      ...base,
+      parsed: {
+        ok: true,
+        data: { devcrow: { tier: 'light', requires: { binaries: [hostile, '--version'] } } },
+        errors: [],
+        body: '',
+      },
+    };
+    const issues = await declaredBinaryResolvable(ctx);
+    await assert.rejects(access(marker), 'the hostile entry reached a shell and wrote its marker');
+    assert.equal(issues.length, 2);
+    for (const issue of issues) {
+      assert.equal(issue.severity, 'warn');
+      assert.equal(issue.check, 'declared-binary-resolvable');
+      assert.match(issue.message, /not a plain binary name; not looked up/);
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test('declaredBinaryResolvable: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
   const ctx = await loadFixture('legacy.md');
   assert.deepEqual(await declaredBinaryResolvable(ctx), []);
@@ -378,6 +410,21 @@ test('fileRefsResolve: refs deduplicate (backtick-wrapped duplicate of valid pat
   const issues = await fileRefsResolve(ctx);
   // Exactly one issue (for the bogus path); backtick-wrapped valid path doesn't double-count.
   assert.equal(issues.length, 1);
+});
+
+test('fileRefsResolve: network-share refs → 2 warns, reported and never probed', async () => {
+  // body-with-network-refs.md names one share with backslashes (twice, deduped)
+  // and one with forward slashes. Probing either would open a connection to a
+  // host the scanned file chose.
+  const ctx = await loadFixture('body-with-network-refs.md');
+  const issues = await fileRefsResolve(ctx);
+  assert.equal(issues.length, 2);
+  for (const issue of issues) {
+    assert.equal(issue.severity, 'warn');
+    assert.equal(issue.check, 'file-refs-resolve');
+    assert.match(issue.message, /network or device path; not probed/);
+    assert.doesNotMatch(issue.message, /does not exist/);
+  }
 });
 
 // --- Phase 1 stubs: registry sanity ------------------------------------
