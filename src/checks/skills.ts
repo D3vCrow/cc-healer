@@ -11,7 +11,7 @@
 // to return [] when its precondition isn't met (e.g. parsed.ok is false for checks
 // that need a parsed frontmatter).
 
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
@@ -19,7 +19,7 @@ import type { Issue } from '../types.js';
 import type { Check } from './types.js';
 import { isNetworkPath } from './common.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // --- Implemented (Phase 0) ----------------------------------------------
 
@@ -89,10 +89,17 @@ export const devcrowTierSet: Check = (ctx) => {
  * Severity: warn.
  * Source: locked design §2 row "Declared binary resolvable".
  */
+// A declared binary is one bare command word. The entry comes out of the
+// scanned file, so nothing else is ever looked up: no spaces, no separators, no
+// shell syntax, no path, and no leading `-` or `/` that `where`/`which` would
+// read as an option.
+const PLAIN_BINARY_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+
+// Runs the lookup with no shell: the name is one argument, never command text.
 async function isBinaryOnPath(name: string): Promise<boolean> {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
   try {
-    await execAsync(`${cmd} ${name}`);
+    await execFileAsync(cmd, [name]);
     return true;
   } catch {
     return false;
@@ -110,6 +117,15 @@ export const declaredBinaryResolvable: Check = async (ctx) => {
   const issues: Issue[] = [];
   for (const name of binList) {
     if (typeof name !== 'string') continue;
+    if (!PLAIN_BINARY_NAME.test(name)) {
+      issues.push({
+        severity: 'warn',
+        check: 'declared-binary-resolvable',
+        file: ctx.file,
+        message: `devcrow.requires.binaries: ${JSON.stringify(name)} is not a plain binary name; not looked up`,
+      });
+      continue;
+    }
     const found = await isBinaryOnPath(name);
     if (!found) {
       issues.push({

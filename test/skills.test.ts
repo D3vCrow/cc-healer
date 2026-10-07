@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -338,6 +339,37 @@ test('declaredBinaryResolvable: devcrow-bin-required (2 bogus bins) → 2 warns'
   assert.equal(issues.length, 2);
   assert.equal(issues.every((i) => i.severity === 'warn'), true);
   assert.equal(issues.every((i) => i.check === 'declared-binary-resolvable'), true);
+});
+
+test('declaredBinaryResolvable: an entry with shell syntax → warn, never run', async () => {
+  // A scanned file is someone else's text. The first entry would write a marker
+  // file if it ever reached a shell; the second would read as an option.
+  const scratch = await mkdtemp(join(tmpdir(), 'cc-healer-test-binname-'));
+  const marker = join(scratch, 'EXECUTED.txt');
+  const hostile =
+    process.platform === 'win32' ? `node & echo ran> "${marker}"` : `node; echo ran > '${marker}'`;
+  try {
+    const base = await loadFixture('clean.md');
+    const ctx: CheckContext = {
+      ...base,
+      parsed: {
+        ok: true,
+        data: { devcrow: { tier: 'light', requires: { binaries: [hostile, '--version'] } } },
+        errors: [],
+        body: '',
+      },
+    };
+    const issues = await declaredBinaryResolvable(ctx);
+    await assert.rejects(access(marker), 'the hostile entry reached a shell and wrote its marker');
+    assert.equal(issues.length, 2);
+    for (const issue of issues) {
+      assert.equal(issue.severity, 'warn');
+      assert.equal(issue.check, 'declared-binary-resolvable');
+      assert.match(issue.message, /not a plain binary name; not looked up/);
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 });
 
 test('declaredBinaryResolvable: legacy fixture (no devcrow block) → 0 issues (self-guarded)', async () => {
