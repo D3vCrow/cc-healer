@@ -14,7 +14,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { Issue } from '../types.js';
 import type { Check } from './types.js';
 import { isNetworkPath } from './common.js';
@@ -390,6 +390,31 @@ export const argumentHintPresent: Check = (ctx) => {
   ];
 };
 
+/**
+ * A `SKILL.md` frontmatter `name` must equal its folder name. A mismatch loads under a
+ * name nobody typed, or collides with the folder name another tool expects. Command
+ * files (`commands/*.md`) have no folder of their own and are skipped.
+ * Severity: warn.
+ * Source: Unity-Technologies/unity-agent-plugin CI frontmatter gate (name == folder),
+ * vetted 2026-10-26 (knowledge/research/2026-10-26-vet-unity-agent-plugin.md).
+ */
+export const skillNameMatchesFolder: Check = (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  if (basename(ctx.filePath).toLowerCase() !== 'skill.md') return [];
+  const name = ctx.parsed.data.name;
+  if (typeof name !== 'string' || name.trim() === '') return [];
+  const folder = basename(dirname(ctx.filePath));
+  if (name.trim() === folder) return [];
+  return [
+    {
+      severity: 'warn',
+      check: 'skill-name-matches-folder',
+      file: ctx.file,
+      message: `name '${name.trim()}' differs from its folder '${folder}'`,
+    },
+  ];
+};
+
 // --- Registry -----------------------------------------------------------
 
 export const skillChecks: ReadonlyArray<Check> = [
@@ -405,4 +430,5 @@ export const skillChecks: ReadonlyArray<Check> = [
   neverBlockPresent,
   recommendedNextStepPresent,
   argumentHintPresent,
+  skillNameMatchesFolder,
 ];

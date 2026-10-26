@@ -19,6 +19,7 @@ import {
   neverBlockPresent,
   recommendedNextStepPresent,
   argumentHintPresent,
+  skillNameMatchesFolder,
   skillChecks,
 } from '../src/checks/skills.ts';
 import type { CheckContext } from '../src/checks/types.ts';
@@ -562,8 +563,42 @@ test('argumentHintPresent: empty-string argument-hint with $ARGUMENTS → 1 warn
   assert.equal(issues[0]?.check, 'argument-hint-present');
 });
 
+// --- skillNameMatchesFolder ---------------------------------------------
+
+test('skillNameMatchesFolder: SKILL.md whose name matches its folder → 0 issues', async () => {
+  const ctx = await loadFixture('skill-dirs/matching-skill/SKILL.md');
+  assert.deepEqual(skillNameMatchesFolder(ctx), []);
+});
+
+test('skillNameMatchesFolder: SKILL.md whose name differs from its folder → 1 warn issue', async () => {
+  const ctx = await loadFixture('skill-dirs/folder-name/SKILL.md');
+  const issues = skillNameMatchesFolder(ctx) as ReturnType<typeof yamlParses>;
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.severity, 'warn');
+  assert.equal(issues[0]?.check, 'skill-name-matches-folder');
+  assert.match(issues[0]?.message ?? '', /other-name/);
+  assert.match(issues[0]?.message ?? '', /folder-name/);
+});
+
+test('skillNameMatchesFolder: a command file (not SKILL.md) is not checked → 0 issues', async () => {
+  const ctx = await loadFixture('clean.md'); // name: example-clean, folder: skills
+  assert.deepEqual(skillNameMatchesFolder(ctx), []);
+});
+
+test('skillNameMatchesFolder: SKILL.md with no name field → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('skill-dirs/folder-name/SKILL.md');
+  ctx.parsed = parseFrontmatter('---\ndescription: no name\n---\n\nBody.\n');
+  assert.deepEqual(skillNameMatchesFolder(ctx), []);
+});
+
+test('skillNameMatchesFolder: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('skill-dirs/folder-name/SKILL.md');
+  ctx.parsed = parseFrontmatter('---\nname: x\n');
+  assert.deepEqual(skillNameMatchesFolder(ctx), []);
+});
+
 // --- registry shape -----------------------------------------------------
 
-test('skillChecks registry contains all 12 checks', () => {
-  assert.equal(skillChecks.length, 12);
+test('skillChecks registry contains all 13 checks', () => {
+  assert.equal(skillChecks.length, 13);
 });
