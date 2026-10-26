@@ -35,7 +35,7 @@ node dist/cli.js --help
 Each tier has a sensible default path — run from your workspace root, or pass an explicit path / `--workspace <dir>`:
 
 ```bash
-node dist/cli.js --tier skills       # lint ~/.claude/commands
+node dist/cli.js --tier skills       # lint ~/.claude/commands + ~/.claude/skills/*/SKILL.md
 node dist/cli.js --tier memory       # lint the project memory dir
 node dist/cli.js --tier settings     # lint ~/.claude/settings.json
 node dist/cli.js --tier knowledge --workspace <dir>   # lint <dir>/knowledge

@@ -9,6 +9,7 @@ import { scanSettings } from './checks/settings.js';
 import { pluginChecks, buildPluginIndex } from './checks/plugins.js';
 import { buildMemoryIndexes } from './memory-indexes.js';
 import { buildKnowledgeIndex } from './knowledge-indexes.js';
+import { collectSkillFolderFiles } from './collect-skill-folders.js';
 import { proposeFixes, applyProposals } from './fix/index.js';
 import type {
   Check,
@@ -57,7 +58,7 @@ Claude Code workspace health-check.
 
 Usage:
   cc-healer <path>                  scan a dir of .md files (skill checks)
-  cc-healer --tier skills [path]    scan ~/.claude/commands (Tier 1, default)
+  cc-healer --tier skills [path]    scan ~/.claude/commands + ~/.claude/skills/*/SKILL.md (Tier 1, default)
   cc-healer --tier memory [path]    scan ~/.claude/projects/<cwd-slug>/memory (Tier 2, default)
   cc-healer --tier knowledge [path] scan <workspace>/knowledge recursively (KB tier, default)
   cc-healer --tier settings [path]  scan ~/.claude/settings.json (Tier 3, default)
@@ -70,7 +71,7 @@ Usage:
   cc-healer --help                  this message
 
 Tiers:
-  skills    — Tier 1, ~/.claude/commands (9 checks live)
+  skills    — Tier 1, ~/.claude/commands + ~/.claude/skills/*/SKILL.md (13 checks live)
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (10 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (3 checks live)
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)
@@ -89,6 +90,7 @@ type TierConfig = {
   skipDirs?: ReadonlySet<string>;       // basenames to not descend into (recursive scans)
   recursive?: boolean;                  // walk sub-directories (default: flat, like memory/skills)
   extraFiles?: ReadonlySet<string>;     // non-.md basenames to also collect (plugins: installed_plugins.json)
+  skillFolders?: string;                // also scan <dir>/<name>/SKILL.md (skills tier: ~/.claude/skills)
   buildIndexes?: (target: string) => Promise<MemoryIndexes>;
   buildKnowledgeIndex?: (target: string) => Promise<KnowledgeIndex>;
   buildPluginIndex?: (target: string) => Promise<PluginIndex>;
@@ -109,6 +111,7 @@ function resolveTier(tier: string, workspaceRoot: string): TierConfig | null {
       return {
         target: expandTilde('~/.claude/commands'),
         checks: skillChecks,
+        skillFolders: expandTilde('~/.claude/skills'),
       };
     case 'memory':
       return {
@@ -218,6 +221,7 @@ async function scanDir(
     skipDirs?: ReadonlySet<string>;
     recursive?: boolean;
     extraFiles?: ReadonlySet<string>;
+    skillFolders?: string;
     buildIndexes?: (target: string) => Promise<MemoryIndexes>;
     buildKnowledgeIndex?: (target: string) => Promise<KnowledgeIndex>;
     buildPluginIndex?: (target: string) => Promise<PluginIndex>;
@@ -238,6 +242,9 @@ async function scanDir(
     skipDirs: opts.skipDirs,
     extraFiles: opts.extraFiles,
   });
+  if (opts.skillFolders) {
+    files.push(...(await collectSkillFolderFiles(opts.skillFolders, 'skills')));
+  }
 
   // Build cross-file indexes once per scan, before per-file checks. Each no-ops for
   // tiers that don't supply the matching builder: memory → indexes, knowledge →
@@ -408,7 +415,10 @@ async function main(): Promise<number> {
       }
       return 2;
     }
-    config = positional ? { ...resolved, target: expandTilde(positional) } : resolved;
+    // An explicit path scans that path only — the default skill-folder sweep is dropped too.
+    config = positional
+      ? { ...resolved, target: expandTilde(positional), skillFolders: undefined }
+      : resolved;
   } else {
     if (!positional) {
       printHelp();
@@ -427,6 +437,7 @@ async function main(): Promise<number> {
         skipDirs: config.skipDirs,
         recursive: config.recursive,
         extraFiles: config.extraFiles,
+        skillFolders: config.skillFolders,
         buildIndexes: config.buildIndexes,
         buildKnowledgeIndex: config.buildKnowledgeIndex,
         buildPluginIndex: config.buildPluginIndex,
@@ -463,9 +474,9 @@ async function main(): Promise<number> {
 
   if (asJson) {
     // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ target: config.target, ...report }, null, 2));
+    console.log(JSON.stringify({ target: config.target, skillFolders: config.skillFolders, ...report }, null, 2));
   } else {
-    printReport(config.target, report);
+    printReport(config.skillFolders ? `${config.target} + ${config.skillFolders}` : config.target, report);
   }
 
   return report.issues.filter((i) => i.severity === 'error').length;
