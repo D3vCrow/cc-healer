@@ -563,6 +563,48 @@ test('argumentHintPresent: empty-string argument-hint with $ARGUMENTS → 1 warn
   assert.equal(issues[0]?.check, 'argument-hint-present');
 });
 
+// --- skill-folder description cap, third-party skips, inline-code args ---
+
+const LONG = 'x'.repeat(900);
+
+test('descriptionLength: SKILL.md uses the 1,536-char listing cap, not 200', () => {
+  const content = `---\nname: s\ndescription: ${LONG}\n---\n\nBody.\n`;
+  assert.deepEqual(descriptionLength(ctxFrom(content, 'skill-dirs/s/SKILL.md')), []);
+  const over = `---\nname: s\ndescription: ${'x'.repeat(1537)}\n---\n\nBody.\n`;
+  const issues = descriptionLength(ctxFrom(over, 'skill-dirs/s/SKILL.md'));
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]?.message ?? '', /max 1536/);
+});
+
+test('descriptionLength: a command file keeps the 200-char cap', () => {
+  const content = `---\ndescription: ${LONG}\n---\n\nBody.\n`;
+  assert.equal(descriptionLength(ctxFrom(content, 'cmd.md')).length, 1);
+});
+
+test('footer checks skip a third-party skill (license field)', () => {
+  const content = '---\nname: v\ndescription: vendored\nlicense: Complete terms in LICENSE.txt\n---\n\nBody.\n';
+  const ctx = ctxFrom(content, 'skill-dirs/v/SKILL.md');
+  assert.deepEqual(neverBlockPresent(ctx), []);
+  assert.deepEqual(recommendedNextStepPresent(ctx), []);
+});
+
+test('footer checks skip a third-party skill (installed-by marker)', () => {
+  const content = '---\nname: v\ndescription: vendored\n---\n<!-- installed-by:some-app -->\n\nBody.\n';
+  const ctx = ctxFrom(content, 'skill-dirs/v/SKILL.md');
+  assert.deepEqual(neverBlockPresent(ctx), []);
+  assert.deepEqual(recommendedNextStepPresent(ctx), []);
+});
+
+test('argumentHintPresent: $ARGUMENTS only inside inline code → 0 issues', () => {
+  const content = '---\ndescription: teaches skill writing\n---\n\nUse `$ARGUMENTS` for variable parts.\n';
+  assert.deepEqual(argumentHintPresent(ctxFrom(content)), []);
+});
+
+test('argumentHintPresent: escaped-backtick inline code also counts as code → 0 issues', () => {
+  const content = '---\ndescription: teaches skill writing\n---\n\nUse \\`$ARGUMENTS\\` for variable parts.\n';
+  assert.deepEqual(argumentHintPresent(ctxFrom(content)), []);
+});
+
 // --- skillNameMatchesFolder ---------------------------------------------
 
 test('skillNameMatchesFolder: SKILL.md whose name matches its folder → 0 issues', async () => {

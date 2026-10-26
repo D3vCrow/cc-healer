@@ -235,22 +235,40 @@ export const fileRefsResolve: Check = async (ctx) => {
   return issues;
 };
 
+const isSkillFolderFile = (filePath: string): boolean =>
+  basename(filePath).toLowerCase() === 'skill.md';
+
+// A skill copied from another source (Anthropic's skills repo, an app's installer)
+// gets overwritten on update, so authoring-convention checks do not apply to it.
+const isThirdPartySkill = (ctx: Parameters<Check>[0]): boolean =>
+  ctx.parsed.ok &&
+  isSkillFolderFile(ctx.filePath) &&
+  ('license' in ctx.parsed.data || /<!--\s*installed-by:/.test(ctx.parsed.body));
+
+// Claude Code cuts description + when_to_use at 1,536 chars in the skill listing
+// (code.claude.com/docs/en/skills, read 2026-10-26). A skill's description is its
+// auto-trigger text, so the listing cut is the line that loses routing words.
+const SKILL_DESCRIPTION_MAX = 1536;
+const COMMAND_DESCRIPTION_MAX = 200;
+
 /**
- * `description` field must be ≤ 200 characters.
+ * `description` field must be ≤ 200 characters for commands, ≤ 1,536 for SKILL.md.
  * Severity: warn.
- * Source: locked design §2 row "Description within threshold".
+ * Source: locked design §2 row "Description within threshold"; skill cap from the
+ * Claude Code skills docs (listing truncation).
  */
 export const descriptionLength: Check = (ctx) => {
   if (!ctx.parsed.ok) return [];
   const desc = ctx.parsed.data.description;
   if (typeof desc !== 'string') return [];
-  if (desc.length <= 200) return [];
+  const max = isSkillFolderFile(ctx.filePath) ? SKILL_DESCRIPTION_MAX : COMMAND_DESCRIPTION_MAX;
+  if (desc.length <= max) return [];
   return [
     {
       severity: 'warn',
       check: 'description-length',
       file: ctx.file,
-      message: `description is ${desc.length} chars (max 200)`,
+      message: `description is ${desc.length} chars (max ${max})`,
     },
   ];
 };
@@ -331,6 +349,7 @@ const NEXT_STEP = /Recommended Next Step/;
 export const neverBlockPresent: Check = (ctx) => {
   if (!ctx.parsed.ok) return [];
   if (Object.keys(ctx.parsed.data).length === 0) return []; // no frontmatter → not a skill
+  if (isThirdPartySkill(ctx)) return [];
   if (NEVER_BLOCK.test(ctx.parsed.body)) return [];
   return [
     {
@@ -350,6 +369,7 @@ export const neverBlockPresent: Check = (ctx) => {
 export const recommendedNextStepPresent: Check = (ctx) => {
   if (!ctx.parsed.ok) return [];
   if (Object.keys(ctx.parsed.data).length === 0) return [];
+  if (isThirdPartySkill(ctx)) return [];
   if (NEXT_STEP.test(ctx.parsed.body)) return [];
   return [
     {
@@ -371,7 +391,10 @@ export const recommendedNextStepPresent: Check = (ctx) => {
 export const argumentHintPresent: Check = (ctx) => {
   if (!ctx.parsed.ok) return [];
   if (Object.keys(ctx.parsed.data).length === 0) return [];
-  if (!ctx.parsed.body.includes('$ARGUMENTS')) return [];
+  // A mention inside inline code (`$ARGUMENTS`, also as \`$ARGUMENTS\`) is text about
+  // the placeholder, not a use of it.
+  const bodyOutsideCode = ctx.parsed.body.replace(/\\?`[^`\n]*\\?`/g, '');
+  if (!bodyOutsideCode.includes('$ARGUMENTS')) return [];
   const hint = ctx.parsed.data['argument-hint'];
   // A hint counts as declared if the key holds a non-empty scalar OR a
   // non-empty list. Bracket-style hints (`argument-hint: [topic]`) parse as a
