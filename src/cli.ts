@@ -71,7 +71,7 @@ Usage:
   cc-healer --help                  this message
 
 Tiers:
-  skills    — Tier 1, ~/.claude/commands + ~/.claude/skills/*/SKILL.md (13 checks live)
+  skills    — Tier 1, ~/.claude/commands + ~/.claude/skills/*/SKILL.md (14 checks live)
   memory    — Tier 2, ~/.claude/projects/<slug>/memory (10 checks live)
   knowledge — KB tier, <workspace>/knowledge recursive (3 checks live)
   settings  — Tier 3, ~/.claude/settings.json (5 checks live)

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
   recommendedNextStepPresent,
   argumentHintPresent,
   skillNameMatchesFolder,
+  bundledRefsResolve,
   skillChecks,
 } from '../src/checks/skills.ts';
 import type { CheckContext } from '../src/checks/types.ts';
@@ -639,8 +640,148 @@ test('skillNameMatchesFolder: broken-yaml (parse failed) → 0 issues (self-guar
   assert.deepEqual(skillNameMatchesFolder(ctx), []);
 });
 
+// --- bundledRefsResolve -------------------------------------------------
+
+// Builds a throwaway ~/.claude-shaped tree: skills/<name>/SKILL.md and
+// commands/<name>.md + command-refs/<name>/. Returns the root.
+async function bundleTree(files: Record<string, string>): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'cc-healer-bundle-'));
+  for (const [rel, text] of Object.entries(files)) {
+    await mkdir(dirname(join(root, rel)), { recursive: true });
+    await writeFile(join(root, rel), text, 'utf-8');
+  }
+  return root;
+}
+
+function ctxAt(filePath: string, content: string): CheckContext {
+  return {
+    file: filePath,
+    filePath,
+    parsed: parseFrontmatter(content),
+    content,
+    today: TEST_TODAY,
+    env: TEST_ENV,
+    cwd: TEST_CWD,
+    workspaceRoot: TEST_WORKSPACE_ROOT,
+  };
+}
+
+const SKILL_HEAD = '---\nname: s\ndescription: Use when testing\n---\n\n';
+const CMD_HEAD = '---\ndescription: test command\n---\n\n';
+
+test('bundledRefsResolve: skill link to an existing bundled file (with #anchor) → 0 issues', async () => {
+  const body = SKILL_HEAD + 'See [the lenses](references/lens-index.md#active) and [notes](./notes.md).\n';
+  const root = await bundleTree({ 'skills/s/SKILL.md': body, 'skills/s/references/lens-index.md': 'x', 'skills/s/notes.md': 'x' });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'skills/s/SKILL.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: skill link to a missing bundled file → 1 warn naming it', async () => {
+  const body = SKILL_HEAD + 'Read [the checklist](pillar-checklist.md) first.\n';
+  const root = await bundleTree({ 'skills/s/SKILL.md': body });
+  try {
+    const issues = await bundledRefsResolve(ctxAt(join(root, 'skills/s/SKILL.md'), body));
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.severity, 'warn');
+    assert.equal(issues[0]?.check, 'bundled-refs-resolve');
+    assert.match(issues[0]?.message ?? '', /pillar-checklist\.md/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: web, absolute, anchor-only and placeholder links are not probed → 0 issues', async () => {
+  const body =
+    SKILL_HEAD +
+    '[a](https://example.com/README.md) [b](C:/elsewhere/x.md) [c](/abs/x.md) [d](#section) [e](<slug>.md) [f](other.txt)\n';
+  const root = await bundleTree({ 'skills/s/SKILL.md': body });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'skills/s/SKILL.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: links inside fenced code and inline code are examples → 0 issues', async () => {
+  const body = SKILL_HEAD + '```md\n[x](missing-one.md)\n```\n\nWrite `[y](missing-two.md)` like this.\n';
+  const root = await bundleTree({ 'skills/s/SKILL.md': body });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'skills/s/SKILL.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: command "read this file" table resolves in command-refs/<name>/ → 0 issues', async () => {
+  const body = CMD_HEAD + '| Read this file | When |\n|---|---|\n| `mode-repo.md` | repo mode |\n| `mode-web.md` | web mode |\n';
+  const root = await bundleTree({
+    'commands/_dig.md': body,
+    'command-refs/_dig/mode-repo.md': 'x',
+    'command-refs/_dig/mode-web.md': 'x',
+  });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'commands/_dig.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: command table row naming a file missing from command-refs/<name>/ → 1 warn', async () => {
+  const body = CMD_HEAD + '| Read this file | When |\n|---|---|\n| `mode-repo.md` | repo |\n| `mode-pdf.md` | pdf |\n';
+  const root = await bundleTree({ 'commands/_dig.md': body, 'command-refs/_dig/mode-repo.md': 'x' });
+  try {
+    const issues = await bundledRefsResolve(ctxAt(join(root, 'commands/_dig.md'), body));
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.check, 'bundled-refs-resolve');
+    assert.match(issues[0]?.message ?? '', /mode-pdf\.md/);
+    assert.match(issues[0]?.message ?? '', /command-refs/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: a table indented inside a list item is still checked → 1 warn', async () => {
+  const body = CMD_HEAD + '4. Read the mode file.\n\n   | Read this file | When |\n   |---|---|\n   | `mode-gone.md` | x |\n';
+  const root = await bundleTree({ 'commands/_dig.md': body, 'command-refs/_dig/mode-repo.md': 'x' });
+  try {
+    const issues = await bundledRefsResolve(ctxAt(join(root, 'commands/_dig.md'), body));
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]?.message ?? '', /mode-gone\.md/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: command with no command-refs folder → table mentions are not probed → 0 issues', async () => {
+  const body = CMD_HEAD + '| File | Meaning |\n|---|---|\n| `VERDICTS.md` | his words |\n';
+  const root = await bundleTree({ 'commands/_x.md': body });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'commands/_x.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: placeholder table cell (`<mode>.md`) is not probed → 0 issues', async () => {
+  const body = CMD_HEAD + '| File | When |\n|---|---|\n| `mode-<mode>.md` | any |\n';
+  const root = await bundleTree({ 'commands/_dig.md': body, 'command-refs/_dig/mode-repo.md': 'x' });
+  try {
+    assert.deepEqual(await bundledRefsResolve(ctxAt(join(root, 'commands/_dig.md'), body)), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('bundledRefsResolve: broken-yaml (parse failed) → 0 issues (self-guarded)', async () => {
+  const ctx = await loadFixture('broken-yaml.md');
+  assert.deepEqual(await bundledRefsResolve(ctx), []);
+});
+
 // --- registry shape -----------------------------------------------------
 
-test('skillChecks registry contains all 13 checks', () => {
-  assert.equal(skillChecks.length, 13);
+test('skillChecks registry contains all 14 checks', () => {
+  assert.equal(skillChecks.length, 14);
 });

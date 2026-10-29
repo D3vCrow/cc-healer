@@ -438,6 +438,81 @@ export const skillNameMatchesFolder: Check = (ctx) => {
   ];
 };
 
+/**
+ * Files a skill or command ships beside itself must exist. Two shapes are checked:
+ *   1. Relative markdown links to a `.md` file (`[x](references/foo.md#part)`),
+ *      resolved from the file's own folder. This is how SKILL.md files point at
+ *      their bundled reference files.
+ *   2. A backticked `.md` path in the first cell of a table row
+ *      (`| \`mode-repo.md\` | When ... |`), resolved in the file's bundle folder:
+ *      the skill folder for a SKILL.md, `<home>/command-refs/<name>/` for a
+ *      command. A command with no command-refs folder is skipped, because its
+ *      tables name project files (VERDICTS.md, TASKS.md), not bundled ones.
+ * Web/absolute links, anchors, placeholders (`<mode>`, `{x}`, `*`) and anything
+ * inside fenced or inline code are not probed. Complements fileRefsResolve,
+ * which covers `Spec:` / `Shared patterns:` lines only.
+ * Severity: warn.
+ * Source: malicaki/game-trend-skills `scripts/validate.mjs` (backticked .md refs
+ * must resolve), vetted 2026-10-29 (knowledge/research/2026-10-29-vet-game-trend-skills.md).
+ */
+const MD_LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+const TABLE_FIRST_CELL_REF = /^[ \t]*\|\s*`([^`\s]+\.md)`\s*\|/gim; // tables may sit indented inside a list
+const PLACEHOLDER = /[<>{}*]/;
+
+function stripCode(body: string): string {
+  return body.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '').replace(/`[^`\n]*`/g, '');
+}
+
+export const bundledRefsResolve: Check = async (ctx) => {
+  if (!ctx.parsed.ok) return [];
+  const body = ctx.parsed.body;
+  const ownDir = dirname(ctx.filePath);
+  const issues: Issue[] = [];
+  const seen = new Set<string>();
+  const report = async (ref: string, dir: string, where: string): Promise<void> => {
+    const key = `${dir}|${ref}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (await fileExists(join(dir, ref))) return;
+    issues.push({
+      severity: 'warn',
+      check: 'bundled-refs-resolve',
+      file: ctx.file,
+      message: `bundled ref '${ref}' does not exist in ${where}`,
+    });
+  };
+  const probeable = (ref: string): boolean =>
+    !PLACEHOLDER.test(ref) &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(ref) && // scheme or drive letter
+    !ref.startsWith('/') &&
+    !ref.startsWith('\\') &&
+    !ref.startsWith('~') &&
+    !isAbsolute(ref);
+
+  for (const match of stripCode(body).matchAll(MD_LINK)) {
+    const ref = (match[1] ?? '').split(/[#?]/)[0] ?? '';
+    if (!ref.toLowerCase().endsWith('.md') || !probeable(ref)) continue;
+    let decoded = ref;
+    try {
+      decoded = decodeURI(ref); // `my%20notes.md` → `my notes.md`
+    } catch {
+      // Malformed escape: probe the raw text.
+    }
+    await report(decoded, ownDir, ownDir);
+  }
+
+  const bundleDir = isSkillFolderFile(ctx.filePath)
+    ? ownDir
+    : join(dirname(ownDir), 'command-refs', basename(ctx.filePath).replace(/\.md$/i, ''));
+  if (bundleDir !== ownDir && !(await fileExists(bundleDir))) return issues;
+  for (const match of body.matchAll(TABLE_FIRST_CELL_REF)) {
+    const ref = match[1] ?? '';
+    if (!probeable(ref)) continue;
+    await report(ref, bundleDir, bundleDir);
+  }
+  return issues;
+};
+
 // --- Registry -----------------------------------------------------------
 
 export const skillChecks: ReadonlyArray<Check> = [
@@ -454,4 +529,5 @@ export const skillChecks: ReadonlyArray<Check> = [
   recommendedNextStepPresent,
   argumentHintPresent,
   skillNameMatchesFolder,
+  bundledRefsResolve,
 ];
